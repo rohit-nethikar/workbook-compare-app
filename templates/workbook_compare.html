@@ -201,7 +201,6 @@
       <th>Created</th>
       <th>Updated</th>
       <th>Last Accessed</th>
-      <th>Preview</th>
     </tr>
   </thead>
   <tbody>
@@ -217,11 +216,6 @@
       <td><span style="color: var(--text-secondary);">{{ cv.created_at or "—" }}</span></td>
       <td><span style="color: var(--text-secondary);">{{ cv.updated_at or "—" }}</span></td>
       <td><span style="color: var(--text-secondary);">{{ cv.last_accessed_at or "—" }}</span></td>
-      <td>
-        <button type="button" class="btn btn-sm btn-outline-secondary preview-btn" data-view-id="{{ cv.id }}" data-view-name="{{ cv.name }}">
-          <i class="bi bi-eye"></i> Preview
-        </button>
-      </td>
     </tr>
     {% endfor %}
   </tbody>
@@ -237,9 +231,7 @@
       initDataTable('#custom-views-table', {
         order: [[0, 'asc']],
         pageLength: 25,
-        scrollX: true,
-        // Disable sorting/searching on Preview column
-        columnDefs: [{ targets: 10, orderable: false, searchable: false }]
+        scrollX: true
       });
     }
 

@@ -10,9 +10,7 @@ same DataTables search box every other page uses - which incidentally also cover
 Strictly read-only, like the rest of this app - never publishes, overwrites, or
 deletes anything on the Tableau Server.
 """
-import io
-
-from flask import Blueprint, flash, jsonify, render_template, send_file
+from flask import Blueprint, flash, render_template
 
 import crypto
 import db
@@ -65,24 +63,3 @@ def list_custom_views():
         flash(f"Could not load custom views from Tableau Server: {exc}", "error")
 
     return render_template("custom_views.html", custom_views=custom_views)
-
-
-@bp.route("/custom-views/<view_id>/preview", methods=["GET"])
-@login_required
-def preview_custom_view_image(view_id):
-    """Streams the rendered PNG of one custom view - see
-    tableau_client.get_custom_view_image() for why this (a visual snapshot) is the
-    closest thing to inspecting a custom view's saved filter/parameter/sort state
-    that Tableau's REST API exposes. Used by both this directory and the Workbook
-    Compare results page (both operate on the same site-scoped custom views)."""
-    site = site_context.get_current_site()
-    try:
-        pat_name, pat_secret = _credentials()
-        image_bytes = tableau_client.call_with_retry(
-            settings.server_url, site, pat_name, pat_secret,
-            lambda server: tableau_client.get_custom_view_image(server, view_id),
-        )
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 502
-
-    return send_file(io.BytesIO(image_bytes), mimetype="image/png")
