@@ -5,8 +5,8 @@
 <p class="text-muted small">
   Every custom view on <strong>{{ current_site }}</strong> the signed-in Personal Access
   Token can see (non-admin PATs only see views they own or that are marked shared).
-  Use the search box below to find everything a specific person or account touches
-  &mdash; e.g. type an account number, email, or workbook name.
+  Use the search box for a quick free-text lookup, or the per-column filters in the
+  table header below to narrow by a specific workbook, owner, account #, or shared status.
 </p>
 
 <div class="d-flex justify-content-between align-items-center mb-2">
@@ -40,6 +40,28 @@
       <th>Updated</th>
       <th>Last Accessed</th>
     </tr>
+    <tr class="column-filters">
+      <th><input type="text" class="form-control form-control-sm" data-filter-type="text" placeholder="Filter&hellip;"></th>
+      <th><select class="form-select form-select-sm" data-filter-type="select" data-filter-field="workbook_name"><option value="">All</option></select></th>
+      <th><select class="form-select form-select-sm" data-filter-type="select" data-filter-field="view_name"><option value="">All</option></select></th>
+      <th><select class="form-select form-select-sm" data-filter-type="select" data-filter-field="owner_name"><option value="">All</option></select></th>
+      <th><select class="form-select form-select-sm" data-filter-type="select" data-filter-field="owner_email"><option value="">All</option></select></th>
+      <th><select class="form-select form-select-sm" data-filter-type="select" data-filter-field="owner_account_number"><option value="">All</option></select></th>
+      <th>
+        <!-- The rendered cell is "&#x1F513; Shared"/"&#x1F512; Private" (emoji prefix),
+             so this needs a contains-match, not the anchored exact-match the other
+             dropdowns use - "Shared" and "Private" don't overlap as substrings of
+             each other, so a plain contains search still can't cross-match. -->
+        <select class="form-select form-select-sm" data-filter-type="select-contains">
+          <option value="">All</option>
+          <option value="Shared">Shared</option>
+          <option value="Private">Private</option>
+        </select>
+      </th>
+      <th><input type="text" class="form-control form-control-sm" data-filter-type="text" placeholder="Filter&hellip;"></th>
+      <th><input type="text" class="form-control form-control-sm" data-filter-type="text" placeholder="Filter&hellip;"></th>
+      <th><input type="text" class="form-control form-control-sm" data-filter-type="text" placeholder="Filter&hellip;"></th>
+    </tr>
   </thead>
   <tbody>
     {% for cv in custom_views %}
@@ -64,11 +86,78 @@
 {% block scripts %}
 <script>
   $(document).ready(function () {
-    if ($('#custom-views-table').length) {
-      initDataTable('#custom-views-table', { order: [[1, 'asc'], [0, 'asc']], pageLength: 25, scrollX: true });
-    }
-
     var data = {{ (custom_views | tojson) }};
+    var table = null;
+
+    if ($('#custom-views-table').length) {
+      // orderCellsTop: sort-on-click stays bound to the real header row (row 1);
+      // the filter row (row 2) is left alone so clicking its inputs/selects never
+      // triggers a sort.
+      table = initDataTable('#custom-views-table', {
+        order: [[1, 'asc'], [0, 'asc']],
+        pageLength: 25,
+        scrollX: true,
+        orderCellsTop: true
+      });
+
+      // Populate each dropdown filter with the distinct values actually present
+      // in this table, sourced from `data` (plain JS objects) rather than the
+      // rendered <td> markup, so badge/HTML columns (Shared?) don't leak into it.
+      $('#custom-views-table thead tr.column-filters th').each(function (index) {
+        var cell = $(this);
+        var select = cell.find('select[data-filter-type="select"]');
+        if (!select.length) { return; }
+
+        var field = select.data('filter-field');
+        var values = data
+          .map(function (cv) { return cv[field]; })
+          .filter(function (v) { return v !== null && v !== undefined && v !== ''; });
+        var unique = Array.from(new Set(values)).sort(function (a, b) {
+          return String(a).localeCompare(String(b));
+        });
+        unique.forEach(function (v) {
+          select.append($('<option>').val(v).text(v));
+        });
+      });
+
+      // Wire every filter control (text inputs: contains-match; selects: exact
+      // match) to the matching column's search - column index is just this
+      // control's position in the filter row.
+      $('#custom-views-table thead tr.column-filters th').each(function (index) {
+        var cell = $(this);
+        var input = cell.find('input[data-filter-type="text"]');
+        var select = cell.find('select');
+
+        if (input.length) {
+          input.on('keyup change', function () {
+            table.column(index).search(this.value).draw();
+          });
+        } else if (select.length) {
+          var containsMatch = select.data('filter-type') === 'select-contains';
+          select.on('change', function () {
+            var value = this.value;
+            if (!value || containsMatch) {
+              // "All", or the Shared?/Private dropdown - contains-match (its
+              // rendered cell has an emoji prefix an exact match can't account for,
+              // but "Shared"/"Private" never overlap as substrings of each other).
+              table.column(index).search(value).draw();
+              return;
+            }
+            // Exact match on the dropdown's chosen value (regex-based, since
+            // that's the only way DataTables supports anchoring) - escape any
+            // regex-special characters an email/name might contain first.
+            var escaped = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            table.column(index).search('^' + escaped + '$', true, false).draw();
+          });
+        }
+      });
+
+      // Prevent clicks inside the filter row's inputs/selects from bubbling up
+      // to DataTables' own row-level handlers.
+      $('#custom-views-table thead tr.column-filters').on('click', function (e) {
+        e.stopPropagation();
+      });
+    }
 
     var exportBtn = document.getElementById('export-json-btn');
     if (exportBtn) {
