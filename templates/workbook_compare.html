@@ -201,6 +201,7 @@
       <th>Created</th>
       <th>Updated</th>
       <th>Last Accessed</th>
+      <th>Preview</th>
     </tr>
   </thead>
   <tbody>
@@ -216,6 +217,11 @@
       <td><span style="color: var(--text-secondary);">{{ cv.created_at or "—" }}</span></td>
       <td><span style="color: var(--text-secondary);">{{ cv.updated_at or "—" }}</span></td>
       <td><span style="color: var(--text-secondary);">{{ cv.last_accessed_at or "—" }}</span></td>
+      <td>
+        <button type="button" class="btn btn-sm btn-outline-secondary preview-btn" data-view-id="{{ cv.id }}" data-view-name="{{ cv.name }}">
+          <i class="bi bi-eye"></i> Preview
+        </button>
+      </td>
     </tr>
     {% endfor %}
   </tbody>
@@ -228,13 +234,18 @@
 <script>
   $(document).ready(function () {
     if ($('#custom-views-table').length) {
-      initDataTable('#custom-views-table', { order: [[0, 'asc']], pageLength: 25, scrollX: true });
+      initDataTable('#custom-views-table', {
+        order: [[0, 'asc']],
+        pageLength: 25,
+        scrollX: true,
+        columnDefs: [{ targets: -1, orderable: false, searchable: false }]
+      });
     }
 
     var exportBtn = document.getElementById('export-json-btn');
     if (exportBtn) {
       exportBtn.addEventListener('click', function () {
-        var data = {{ (result.custom_views | tojson) if result else '[]' }};
+        var data = {{ (result.custom_views if result else []) | tojson }};
         var blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
         var url = URL.createObjectURL(blob);
         var a = document.createElement('a');
@@ -250,7 +261,7 @@
     var exportCsvBtn = document.getElementById('export-csv-btn');
     if (exportCsvBtn) {
       exportCsvBtn.addEventListener('click', function () {
-        var data = {{ (result.custom_views | tojson) if result else '[]' }};
+        var data = {{ (result.custom_views if result else []) | tojson }};
         var columns = [
           ['name', 'Name'],
           ['view_name', 'Base View'],
@@ -292,12 +303,12 @@
     if (exportPdfBtn) {
       exportPdfBtn.addEventListener('click', function () {
         var payload = {
-          workbook_name: {{ (result.workbook_name | tojson) if result else '""' }},
-          site: {{ (current_site | tojson) if current_site else '""' }},
-          diff: {{ (result.diff_json | tojson) if result else '{}' }},
-          impact: {{ (result.impact | tojson) if result else '{}' }},
-          custom_views: {{ (result.custom_views | tojson) if result else '[]' }},
-          plain_summary: {{ (result.plain_summary | tojson) if result else '{}' }}
+          workbook_name: {{ (result.workbook_name if result else "") | tojson }},
+          site: {{ (current_site if current_site else "") | tojson }},
+          diff: {{ (result.diff_json if result else {}) | tojson }},
+          impact: {{ (result.impact if result else {}) | tojson }},
+          custom_views: {{ (result.custom_views if result else []) | tojson }},
+          plain_summary: {{ (result.plain_summary if result else {}) | tojson }}
         };
         exportPdfBtn.disabled = true;
         var originalHtml = exportPdfBtn.innerHTML;

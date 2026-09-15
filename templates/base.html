@@ -72,6 +72,28 @@
   {% endwith %}
 </div>
 
+<!-- Shared custom-view preview modal - triggered from a `.preview-btn` (with
+     data-view-id/data-view-name) on any page; see the fetch handler below. Shows
+     the rendered image of the custom view exactly as saved (filters/parameters/
+     sort baked in) - Tableau's REST API has no endpoint for the underlying
+     filter/parameter/sort values themselves, so this visual snapshot is the
+     closest available substitute for actually inspecting saved state. -->
+<div class="modal fade" id="previewModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="previewModalLabel">Custom View Preview</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body text-center">
+        <div id="previewSpinner" class="spinner-border" role="status"><span class="visually-hidden">Loading&hellip;</span></div>
+        <img id="previewImage" src="" class="img-fluid" style="display:none;" alt="Custom view preview">
+        <div id="previewError" class="text-danger small" style="display:none;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="container-fluid page-fade">
   {% block content %}{% endblock %}
 
@@ -114,6 +136,56 @@
     el.addEventListener('hidden.bs.toast', function () { el.remove(); });
     toast.show();
   }
+
+  // Custom-view preview: any button anywhere with class "preview-btn" and
+  // data-view-id/data-view-name triggers this, fetching the rendered PNG from
+  // /custom-views/<id>/preview and showing it in the shared modal above.
+  document.addEventListener('click', function (e) {
+    var btn = e.target.closest('.preview-btn');
+    if (!btn) { return; }
+
+    var viewId = btn.getAttribute('data-view-id');
+    var viewName = btn.getAttribute('data-view-name') || 'Custom View';
+    document.getElementById('previewModalLabel').textContent = 'Preview: ' + viewName;
+
+    var img = document.getElementById('previewImage');
+    var spinner = document.getElementById('previewSpinner');
+    var errorEl = document.getElementById('previewError');
+    img.style.display = 'none';
+    errorEl.style.display = 'none';
+    spinner.style.display = 'inline-block';
+
+    var modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('previewModal'));
+    modal.show();
+
+    fetch('/custom-views/' + encodeURIComponent(viewId) + '/preview')
+      .then(function (resp) {
+        if (!resp.ok) {
+          return resp.json().catch(function () { return {}; }).then(function (body) {
+            throw new Error(body.error || ('Server returned ' + resp.status));
+          });
+        }
+        return resp.blob();
+      })
+      .then(function (blob) {
+        var url = URL.createObjectURL(blob);
+        img.onload = function () { URL.revokeObjectURL(url); };
+        img.src = url;
+        spinner.style.display = 'none';
+        img.style.display = 'inline-block';
+      })
+      .catch(function (err) {
+        spinner.style.display = 'none';
+        errorEl.textContent = 'Could not load preview: ' + err.message;
+        errorEl.style.display = 'block';
+      });
+  });
+
+  document.getElementById('previewModal').addEventListener('hidden.bs.modal', function () {
+    var img = document.getElementById('previewImage');
+    if (img.src && img.src.indexOf('blob:') === 0) { URL.revokeObjectURL(img.src); }
+    img.src = '';
+  });
 
   document.querySelectorAll('#toast-container .toast').forEach(function (el) {
     new bootstrap.Toast(el).show();

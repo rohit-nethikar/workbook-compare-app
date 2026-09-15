@@ -1,6 +1,7 @@
 """Thin wrapper around `tableauserverclient` (TSC) for exactly what Workbook Compare
 needs: signing in, listing workbooks/custom views live (no local cache), resolving a
-workbook by id or name, and downloading a workbook's published definition (no extract).
+workbook by id or name, downloading a workbook's published definition (no extract),
+and rendering a custom view's saved-state preview image.
 
 Trimmed from tableau-admin-dashboard/tableau_client.py - that version also covers
 projects/datasources/users/permissions/jobs/etc. for the full admin dashboard; none of
@@ -165,3 +166,21 @@ def list_custom_views(server) -> list:
         page_number += 1
 
     return rows
+
+
+def get_custom_view_image(server, view_id: str) -> bytes:
+    """Downloads the rendered PNG of a custom view exactly as saved - filters,
+    parameters, and sort order all baked into the image as Tableau last rendered
+    them. This is the closest thing to inspecting a custom view's saved state that
+    the Tableau REST API exposes: there is no endpoint that returns the underlying
+    filter/parameter/sort *values* themselves (verified directly against this
+    server - the "content"/full-definition endpoint used by Tableau's Migration SDK
+    404s here, and the image/PDF/data endpoints only support their one native
+    format each, no JSON)."""
+    url = f"{server.custom_views.baseurl}/{view_id}/image"
+    # No explicit Accept header - Tableau's image endpoint returns 406 Not
+    # Acceptable for "Accept: image/png" specifically (confirmed against the real
+    # server); it's happy with the default (no Accept header at all).
+    request = urllib.request.Request(url, headers={"X-Tableau-Auth": server.auth_token})
+    with urllib.request.urlopen(request, timeout=30) as response:
+        return response.read()

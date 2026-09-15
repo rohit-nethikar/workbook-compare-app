@@ -42,6 +42,7 @@
       <th>Created</th>
       <th>Updated</th>
       <th>Last Accessed</th>
+      <th>Preview</th>
     </tr>
     <tr class="column-filters">
       <th><input type="text" class="form-control form-control-sm" data-filter-type="text" placeholder="Filter&hellip;"></th>
@@ -64,6 +65,7 @@
       <th><input type="text" class="form-control form-control-sm" data-filter-type="text" placeholder="Filter&hellip;"></th>
       <th><input type="text" class="form-control form-control-sm" data-filter-type="text" placeholder="Filter&hellip;"></th>
       <th><input type="text" class="form-control form-control-sm" data-filter-type="text" placeholder="Filter&hellip;"></th>
+      <th><!-- Preview: not filterable --></th>
     </tr>
   </thead>
   <tbody>
@@ -79,6 +81,11 @@
       <td><span style="color: var(--text-secondary);">{{ cv.created_at or "—" }}</span></td>
       <td><span style="color: var(--text-secondary);">{{ cv.updated_at or "—" }}</span></td>
       <td><span style="color: var(--text-secondary);">{{ cv.last_accessed_at or "—" }}</span></td>
+      <td>
+        <button type="button" class="btn btn-sm btn-outline-secondary preview-btn" data-view-id="{{ cv.id }}" data-view-name="{{ cv.name }}">
+          <i class="bi bi-eye"></i> Preview
+        </button>
+      </td>
     </tr>
     {% endfor %}
   </tbody>
@@ -100,7 +107,8 @@
         order: [[1, 'asc'], [0, 'asc']],
         pageLength: 25,
         scrollX: true,
-        orderCellsTop: true
+        orderCellsTop: true,
+        columnDefs: [{ targets: -1, orderable: false, searchable: false }]
       });
 
       // Populate each dropdown filter with the distinct values actually present
