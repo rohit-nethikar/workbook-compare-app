@@ -259,25 +259,32 @@ async function captureAndCompareViewState(baseViewUrl, customViewId, customViewN
   console.log('[Derived State] Custom view ID:', customViewId);
 
   try {
+    console.log('[Derived State] ========================================');
+    console.log('[Derived State] START: Capturing state for', customViewName);
+    console.log('[Derived State] ========================================');
+
     showToast(`Capturing base-view state for "${customViewName}"...`, 'info');
 
     // Load the Embedding API
     // Use the server URL passed from the template, or fall back to current location origin
     const serverUrl = window.__tableauServerUrl || window.location.origin;
     console.log('[Derived State] Tableau Server URL:', serverUrl);
+    console.log('[Derived State] Base view URL:', baseViewUrl);
 
+    console.log('[Derived State] Step 1: Loading Embedding API...');
     await loadTableauEmbeddingApi(serverUrl);
+    console.log('[Derived State] Step 1: SUCCESS - Embedding API loaded');
 
     // Create and embed the base view
-    console.log('[Derived State] Creating and embedding base view...');
+    console.log('[Derived State] Step 2: Creating and embedding base view...');
     const viz = await createAndEmbedViz(baseViewUrl);
-    console.log('[Derived State] Base view embedded successfully');
+    console.log('[Derived State] Step 2: SUCCESS - Base view embedded');
 
     // Capture base-view state
-    console.log('[Derived State] Capturing base-view filters and parameters...');
+    console.log('[Derived State] Step 3: Capturing base-view filters and parameters...');
     const baseFilters = await captureFilterState(viz);
     const baseParameters = await captureParameterState(viz);
-    console.log('[Derived State] Base state captured:', {
+    console.log('[Derived State] Step 3: SUCCESS - Base state captured:', {
       filterCount: baseFilters.length,
       parameterCount: baseParameters.length,
       filters: baseFilters.map(f => f.field_name),
@@ -292,15 +299,15 @@ async function captureAndCompareViewState(baseViewUrl, customViewId, customViewN
     showToast(`Loading Custom View "${customViewName}"...`, 'info');
 
     // Load the custom view
-    console.log('[Derived State] Switching to custom view with ID:', customViewId);
+    console.log('[Derived State] Step 4: Switching to custom view with ID:', customViewId);
     await loadCustomView(viz, customViewId);
-    console.log('[Derived State] Custom view loaded successfully');
+    console.log('[Derived State] Step 4: SUCCESS - Custom view loaded');
 
     // Capture custom-view state
-    console.log('[Derived State] Capturing custom-view filters and parameters...');
+    console.log('[Derived State] Step 5: Capturing custom-view filters and parameters...');
     const cvFilters = await captureFilterState(viz);
     const cvParameters = await captureParameterState(viz);
-    console.log('[Derived State] Custom view state captured:', {
+    console.log('[Derived State] Step 5: SUCCESS - Custom view state captured:', {
       filterCount: cvFilters.length,
       parameterCount: cvParameters.length,
       filters: cvFilters.map(f => f.field_name),
@@ -313,12 +320,13 @@ async function captureAndCompareViewState(baseViewUrl, customViewId, customViewN
     };
 
     // Clean up the viz
-    console.log('[Derived State] Cleaning up embedded viz...');
+    console.log('[Derived State] Step 6: Cleaning up embedded viz...');
     cleanupViz();
+    console.log('[Derived State] Step 6: SUCCESS - Viz cleaned up');
 
     // POST the captured states to the backend
     showToast('Analyzing state differences...', 'info');
-    console.log('[Derived State] POSTing captured states to /workbook-compare/derived-state...');
+    console.log('[Derived State] Step 7: POSTing captured states to /workbook-compare/derived-state...');
 
     const response = await fetch('/workbook-compare/derived-state', {
       method: 'POST',
@@ -331,6 +339,8 @@ async function captureAndCompareViewState(baseViewUrl, customViewId, customViewN
       }),
     });
 
+    console.log('[Derived State] Step 7: Response status:', response.status, response.ok ? 'OK' : 'ERROR');
+
     if (!response.ok) {
       const errorBody = await response.json().catch(() => ({}));
       console.error('[Derived State] Server error response:', response.status, errorBody);
@@ -340,7 +350,7 @@ async function captureAndCompareViewState(baseViewUrl, customViewId, customViewN
     }
 
     const evidence = await response.json();
-    console.log('[Derived State] Evidence received:', evidence);
+    console.log('[Derived State] Step 7: SUCCESS - Evidence received:', evidence);
 
     // Display result
     const confidenceColor = {
@@ -354,27 +364,51 @@ async function captureAndCompareViewState(baseViewUrl, customViewId, customViewN
       confidenceColor
     );
 
-    console.log('[Derived State] State capture completed successfully');
+    console.log('[Derived State] ========================================');
+    console.log('[Derived State] SUCCESS: State capture completed!');
+    console.log('[Derived State] Confidence:', evidence.confidence);
+    console.log('[Derived State] Delta count:', evidence.delta_count);
+    console.log('[Derived State] ========================================');
 
     // Return evidence object in case caller wants to do something with it
     return evidence;
 
   } catch (err) {
     cleanupViz();
-    console.error('[Derived State] Error capturing derived state:', err);
-    console.error('[Derived State] Error details:', {
-      message: err.message,
-      stack: err.stack,
-    });
+    console.error('[Derived State] ERROR capturing derived state:', err);
+    console.error('[Derived State] Error message:', err.message);
+    console.error('[Derived State] Error stack:', err.stack);
 
     let userMessage = err.message;
     if (err.message.includes('FirstInteractive')) {
       userMessage = err.message + ' Verify: (1) View URL is correct, (2) Tableau Server is reachable, (3) You have permission to view it.';
     }
 
-    showToast(`Error capturing state for "${customViewName}": ${userMessage}`, 'error');
+    const errorMsg = `Error capturing state for "${customViewName}": ${userMessage}`;
+    console.error('[Derived State] USER MESSAGE:', errorMsg);
+
+    // Show error toast with longer timeout (don't auto-dismiss)
+    showErrorToastPersistent(errorMsg);
     throw err;
   }
+}
+
+/**
+ * Show an error toast that persists until user dismisses it.
+ */
+function showErrorToastPersistent(message) {
+  var container = document.getElementById('toast-container');
+  if (!container) { return; }
+  var el = document.createElement('div');
+  el.className = 'toast align-items-center text-bg-danger border-0';
+  el.setAttribute('role', 'alert');
+  el.innerHTML = '<div class="d-flex"><div class="toast-body"></div>' +
+    '<button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button></div>';
+  el.querySelector('.toast-body').textContent = message;
+  container.appendChild(el);
+  var toast = new bootstrap.Toast(el, { delay: 0 }); // No auto-dismiss
+  el.addEventListener('hidden.bs.toast', function () { el.remove(); });
+  toast.show();
 }
 
 /**
