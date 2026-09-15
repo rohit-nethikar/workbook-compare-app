@@ -49,3 +49,37 @@ body {
   background-color: rgba(255, 184, 28, 0.1);
   color: var(--warning);
 }
+
+/* Branding - ported from tableau-admin-dashboard/static/style.css */
+.tableau-logo {
+  height: 22px;
+  width: auto;
+}
+.tableau-logo-sm {
+  height: 16px;
+  width: auto;
+}
+.tableau-logo-lg {
+  height: 40px;
+  width: auto;
+}
+.mayo-logo {
+  height: 32px;
+  width: auto;
+}
+
+.app-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 2.5rem;
+  padding: 1rem 0;
+  border-top: 1px solid var(--border-light);
+}
+.app-footer .app-footer-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}

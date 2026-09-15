@@ -102,5 +102,5 @@ app = create_app()
 if __name__ == "__main__":
     print("Starting Workbook Compare (HTTP-only mode)")
     # Waitress defaults to a 1 GiB request body cap, which rejects a multi-GB .twbx
-    # upload before it ever reaches Flask. Raise it.
-    serve(app, host=settings.host, port=settings.port, max_request_body_size=10 * 1024 ** 3)
+    # upload before it ever reaches Flask. Raise it to the candidate-file limit.
+    serve(app, host=settings.host, port=settings.port, max_request_body_size=6 * 1024 ** 3)

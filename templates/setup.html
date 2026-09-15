@@ -3,6 +3,9 @@
 {% block content %}
 <div class="row justify-content-center">
   <div class="col-md-6 mt-4">
+    <div class="text-center mb-3">
+      <img src="{{ url_for('static', filename='img/tableau-logo.png') }}" alt="Tableau" class="tableau-logo-lg">
+    </div>
     <h3 class="mb-3 text-center"><i class="bi bi-gear"></i> {{ "Update" if already_configured else "First-Time Setup" }}</h3>
 
     <div class="alert alert-info small">
