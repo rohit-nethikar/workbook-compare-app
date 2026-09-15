@@ -296,12 +296,12 @@ def build_report_pdf(
         bottomMargin=0.6 * inch,
         leftMargin=0.6 * inch,
         rightMargin=0.6 * inch,
-        title=f"Workbook Compare Report - {workbook_name}",
+        title=f"Tableau Workbook Compare Report - {workbook_name}",
     )
     styles = _styles()
 
     story = [
-        Paragraph("Workbook Compare Report", styles["Title"]),
+        Paragraph("Tableau Workbook Compare Report", styles["Title"]),
         Paragraph(_text(workbook_name), styles["Heading2"]),
         Paragraph(
             f"Site: {_text(site or '-')} &nbsp;|&nbsp; "

@@ -1,5 +1,6 @@
 import os
 import threading
+from urllib.parse import urlparse
 
 from flask import Flask, redirect, request, session, url_for
 from waitress import serve
@@ -73,6 +74,7 @@ def create_app():
         return {
             "current_site": site_context.get_current_site(),
             "available_sites": settings.sites,
+            "server_host": urlparse(settings.server_url).netloc or settings.server_url,
         }
 
     @app.route("/switch-site", methods=["POST"])
@@ -100,7 +102,7 @@ def create_app():
 app = create_app()
 
 if __name__ == "__main__":
-    print("Starting Workbook Compare (HTTP-only mode)")
+    print("Starting Tableau Workbook Compare (HTTP-only mode)")
     # Waitress defaults to a 1 GiB request body cap, which rejects a multi-GB .twbx
-    # upload before it ever reaches Flask. Raise it to the candidate-file limit.
-    serve(app, host=settings.host, port=settings.port, max_request_body_size=6 * 1024 ** 3)
+    # upload before it ever reaches Flask. Raise it.
+    serve(app, host=settings.host, port=settings.port, max_request_body_size=10 * 1024 ** 3)
