@@ -49,11 +49,29 @@ def _connect_with_known_version(server_url: str) -> TSC.Server:
 
 @contextlib.contextmanager
 def signed_in_server(server_url: str, site_name: str, pat_name: str, pat_secret: str):
-    """Yields a signed-in TSC Server object."""
+    """Yields a signed-in TSC Server object.
+
+    Signs in and out explicitly (rather than via TSC's own `with
+    server.auth.sign_in(auth):` sugar) so a failed *sign-out* can't masquerade as a
+    failed operation. `server.auth.sign_in()` performs the real sign-in immediately
+    and only returns a thin wrapper whose __exit__ calls sign_out() - so using it as
+    a context manager means any exception from THAT sign_out() call (e.g. another
+    sign-in with the same PAT already invalidated this session - exactly the
+    scenario call_with_retry exists for) propagates out of the `with` block,
+    turning a caller's already-successful result into an apparent NotSignedInError
+    and forcing a pointless (and, if it happens twice in a row, fatal) retry of
+    work that already succeeded. A failed sign-out has nothing meaningful left to
+    clean up - the session is already dead one way or another - so it's swallowed."""
     server = _connect_with_known_version(server_url)
     auth = TSC.PersonalAccessTokenAuth(pat_name, pat_secret, site_id=site_name)
-    with server.auth.sign_in(auth):
+    server.auth.sign_in(auth)
+    try:
         yield server
+    finally:
+        try:
+            server.auth.sign_out()
+        except Exception:
+            pass
 
 
 def call_with_retry(server_url: str, site_name: str, pat_name: str, pat_secret: str, fn):
