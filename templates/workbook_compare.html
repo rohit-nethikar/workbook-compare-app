@@ -353,6 +353,10 @@
       });
     }
   });
+
+  // Pass Tableau Server URL to derived-state-capture.js
+  window.__tableauServerUrl = {{ ('http://' + server_host if server_host and not server_host.startswith('http') else server_host) | tojson }};
+  console.log('[Derived State] Tableau Server URL set to:', window.__tableauServerUrl);
 </script>
 <script src="{{ url_for('static', filename='js/derived-state-capture.js') }}"></script>
 {% endblock %}

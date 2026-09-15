@@ -50,10 +50,16 @@ async function loadTableauEmbeddingApi(serverUrl) {
     script.onerror = (err) => {
       clearTimeout(timeoutId);
       console.error('[Derived State] Embedding API load failed:', err);
+      console.error('[Derived State] Attempted URL:', apiUrl);
+      console.error('[Derived State] Troubleshooting:');
+      console.error('  1. Check Network tab (F12) for exact error (404, CORS, timeout, etc.)');
+      console.error('  2. Verify Tableau Server is reachable at:', serverUrl);
+      console.error('  3. If Tableau Server is on a different domain, CORS must be enabled');
+      console.error('  4. Try accessing this URL in browser:', apiUrl);
       reject(new Error(
         'Failed to load Tableau Embedding API from ' + apiUrl + '. ' +
-        'Verify: (1) Tableau Server URL is correct, (2) Script is accessible from your browser, ' +
-        '(3) No CORS errors. Check browser console for details.'
+        'Check browser console (F12) Network tab for the exact error (404, CORS, timeout). ' +
+        'Verify Tableau Server URL is correct and Embedding API is available at /javascripts/api/tableau.embedding.3.latest.js'
       ));
     };
 
@@ -256,8 +262,9 @@ async function captureAndCompareViewState(baseViewUrl, customViewId, customViewN
     showToast(`Capturing base-view state for "${customViewName}"...`, 'info');
 
     // Load the Embedding API
-    const serverUrl = window.location.origin; // Assumes app is on same domain as Tableau Server
-    console.log('[Derived State] Tableau Server URL (inferred):', serverUrl);
+    // Use the server URL passed from the template, or fall back to current location origin
+    const serverUrl = window.__tableauServerUrl || window.location.origin;
+    console.log('[Derived State] Tableau Server URL:', serverUrl);
 
     await loadTableauEmbeddingApi(serverUrl);
 
