@@ -23,7 +23,10 @@
 
 {% if not custom_views %}
 <div style="background-color: rgba(91, 192, 222, 0.1); border-left: 4px solid var(--info); padding: 16px; border-radius: 4px; color: var(--text-primary);">
-  ℹ️ No custom views found on this site for this PAT, or the list couldn't be loaded - check for an error message above.
+  ℹ️ No custom views found on <strong>{{ current_site }}</strong> for this PAT. If an error occurred loading
+  them from Tableau Server, it would show as a red toast in the corner (not here). Otherwise, this site
+  genuinely has none visible to this PAT (non-admin PATs only see views they own or that are marked
+  shared) - if you expected data, try a different site using the site selector in the top-right of the nav bar.
 </div>
 {% else %}
 <table id="custom-views-table" class="table table-striped table-bordered w-100">
