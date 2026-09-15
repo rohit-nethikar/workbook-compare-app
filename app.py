@@ -61,11 +61,12 @@ def create_app():
 
     db.init_db()
 
-    from routes import auth_routes, setup, workbook_compare
+    from routes import auth_routes, custom_views, setup, workbook_compare
 
     app.register_blueprint(setup.bp)
     app.register_blueprint(auth_routes.bp)
     app.register_blueprint(workbook_compare.bp)
+    app.register_blueprint(custom_views.bp)
 
     @app.context_processor
     def inject_site_context():

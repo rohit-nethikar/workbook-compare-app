@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block title %}Custom Views{% endblock %}
+{% block content %}
+<h1 class="mb-3">🗂️ Custom Views</h1>
+<p class="text-muted small">
+  Every custom view on <strong>{{ current_site }}</strong> the signed-in Personal Access
+  Token can see (non-admin PATs only see views they own or that are marked shared).
+  Use the search box below to find everything a specific person or account touches
+  &mdash; e.g. type an account number, email, or workbook name.
+</p>
+
+<div class="d-flex justify-content-between align-items-center mb-2">
+  <h5 style="color: var(--text-primary); margin: 0;">{{ custom_views | length }} custom view(s)</h5>
+  <div class="d-flex gap-2">
+    <button type="button" class="btn btn-sm btn-outline-secondary" id="export-csv-btn">
+      <i class="bi bi-filetype-csv"></i> Export CSV
+    </button>
+    <button type="button" class="btn btn-sm btn-outline-secondary" id="export-json-btn">
+      <i class="bi bi-filetype-json"></i> Export JSON
+    </button>
+  </div>
+</div>
+
+{% if not custom_views %}
+<div style="background-color: rgba(91, 192, 222, 0.1); border-left: 4px solid var(--info); padding: 16px; border-radius: 4px; color: var(--text-primary);">
+  ℹ️ No custom views found on this site for this PAT, or the list couldn't be loaded - check for an error message above.
+</div>
+{% else %}
+<table id="custom-views-table" class="table table-striped table-bordered w-100">
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th>Workbook</th>
+      <th>Base View</th>
+      <th>Owner</th>
+      <th>Owner Email</th>
+      <th>Account #</th>
+      <th>Shared?</th>
+      <th>Created</th>
+      <th>Updated</th>
+      <th>Last Accessed</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for cv in custom_views %}
+    <tr>
+      <td><strong>{{ cv.name }}</strong></td>
+      <td>{{ cv.workbook_name or "" }}</td>
+      <td>{{ cv.view_name or "" }}</td>
+      <td>{{ cv.owner_name or "" }}</td>
+      <td><span style="font-family: monospace; color: var(--accent);">{{ cv.owner_email or "—" }}</span></td>
+      <td>{{ cv.owner_account_number or "—" }}</td>
+      <td>{% if cv.shared %}<span class="badge badge-success">🔓 Shared</span>{% else %}<span class="badge badge-warning">🔒 Private</span>{% endif %}</td>
+      <td><span style="color: var(--text-secondary);">{{ cv.created_at or "—" }}</span></td>
+      <td><span style="color: var(--text-secondary);">{{ cv.updated_at or "—" }}</span></td>
+      <td><span style="color: var(--text-secondary);">{{ cv.last_accessed_at or "—" }}</span></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  $(document).ready(function () {
+    if ($('#custom-views-table').length) {
+      initDataTable('#custom-views-table', { order: [[1, 'asc'], [0, 'asc']], pageLength: 25, scrollX: true });
+    }
+
+    var data = {{ (custom_views | tojson) }};
+
+    var exportBtn = document.getElementById('export-json-btn');
+    if (exportBtn) {
+      exportBtn.addEventListener('click', function () {
+        var blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = 'custom_views_{{ current_site | replace(" ", "_") }}.json';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      });
+    }
+
+    var exportCsvBtn = document.getElementById('export-csv-btn');
+    if (exportCsvBtn) {
+      exportCsvBtn.addEventListener('click', function () {
+        var columns = [
+          ['name', 'Name'],
+          ['workbook_name', 'Workbook'],
+          ['view_name', 'Base View'],
+          ['owner_name', 'Owner'],
+          ['owner_email', 'Owner Email'],
+          ['owner_account_number', 'Account #'],
+          ['shared', 'Shared?'],
+          ['created_at', 'Created'],
+          ['updated_at', 'Updated'],
+          ['last_accessed_at', 'Last Accessed']
+        ];
+        var csvEscape = function (value) {
+          if (value === null || value === undefined) { return ''; }
+          if (typeof value === 'boolean') { value = value ? 'Yes' : 'No'; }
+          var s = String(value);
+          if (/[",\n]/.test(s)) {
+            s = '"' + s.replace(/"/g, '""') + '"';
+          }
+          return s;
+        };
+        var lines = [columns.map(function (c) { return csvEscape(c[1]); }).join(',')];
+        data.forEach(function (cv) {
+          lines.push(columns.map(function (c) { return csvEscape(cv[c[0]]); }).join(','));
+        });
+        var blob = new Blob([lines.join('\r\n')], { type: 'text/csv' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = 'custom_views_{{ current_site | replace(" ", "_") }}.csv';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      });
+    }
+  });
+</script>
+{% endblock %}
