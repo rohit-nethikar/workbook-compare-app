@@ -1427,6 +1427,59 @@ def classify_view_impact(view_name: str, published: WorkbookStructure, candidate
     return workbook_classification
 
 
+def apply_derived_state_evidence(delta) -> dict:
+    """Apply live-captured filter/parameter delta as evidence to strengthen Custom View
+    impact assessment.
+
+    This function takes a DerivedCustomViewStateDelta (difference between base view
+    and custom view effective filter/parameter states) and returns additive confidence
+    evidence WITHOUT mutating the existing impact_severity/impact_status/classification
+    fields in the impact analysis.
+
+    Args:
+        delta: DerivedCustomViewStateDelta instance (see custom_view_state.py).
+
+    Returns:
+        A dict with 'confidence' (str: 'confirmed'/'unconfirmed'/'not_checked') and
+        'note' (str: human-readable summary of what was verified), suitable for
+        attaching to the existing impact result as supporting evidence.
+
+    If the custom view's live state differs from the base view:
+        'confirmed' — the custom view has demonstrably overridden filters/parameters,
+                      confirming it is at risk if those fields change.
+    If the custom view's live state matches the base view:
+        'unconfirmed' — the custom view has made no filter/parameter overrides,
+                        so the structural impact alone is uncertain.
+    If this function was never called (live capture was skipped):
+        'not_checked' — no live evidence available.
+
+    NOTE: This is DERIVED/OBSERVED effective state, not Tableau's explicit saved-override
+    metadata. It strengthens impact confidence but does not replace the structural analysis.
+    """
+    if delta is None:
+        return {'confidence': 'not_checked', 'note': 'Live filter/parameter capture was not performed.'}
+
+    if delta.is_empty():
+        return {
+            'confidence': 'unconfirmed',
+            'note': 'Custom view applies the same filters and parameters as the base view—no live overrides detected.',
+        }
+
+    delta_summary = []
+    filter_changes = [d for d in delta.deltas if d.field_type == 'filter']
+    param_changes = [d for d in delta.deltas if d.field_type == 'parameter']
+
+    if filter_changes:
+        delta_summary.append(f'{len(filter_changes)} filter(s) changed or overridden')
+    if param_changes:
+        delta_summary.append(f'{len(param_changes)} parameter(s) changed or overridden')
+
+    return {
+        'confidence': 'confirmed',
+        'note': f'Custom view overrides detected: {", ".join(delta_summary)}. Impact risk is elevated.',
+    }
+
+
 # Plain-English translation of each finding category, written for someone who
 # doesn't know what a "data source filter" or a "Set" is but still needs to
 # know whether a change is safe to publish. Keyed on the exact 'category'

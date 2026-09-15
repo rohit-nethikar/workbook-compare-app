@@ -21,7 +21,7 @@ import shutil
 import tempfile
 import zipfile
 
-from flask import Blueprint, flash, redirect, render_template, request, send_file, url_for
+from flask import Blueprint, flash, jsonify, redirect, render_template, request, send_file, url_for
 
 import crypto
 import db
@@ -30,7 +30,9 @@ import tableau_client
 import workbook_compare_pdf
 from auth import login_required
 from config import settings
+from custom_view_state import DerivedCustomViewState, compute_state_delta
 from workbook_compare_engine import (
+    apply_derived_state_evidence,
     build_plain_language_summary,
     classify_custom_view_impact,
     classify_view_impact,
@@ -151,9 +153,15 @@ def run_workbook_compare():
         if wb_item is None:
             return None
         published_path = tableau_client.download_workbook_definition(server, wb_item.id, published_tmp_dir)
+
+        # Populate the workbook's views to get their content_url for embedding
+        # (needed for live filter/parameter state capture via Embedding API v3)
+        server.workbooks.populate_views(wb_item)
+        view_content_urls = {view.name: view.content_url for view in (wb_item.views or [])}
+
         custom_view_rows = tableau_client.list_custom_views(server)
         workbooks = _sorted_workbook_dicts(tableau_client.list_workbooks(server))
-        return wb_item.name, published_path, custom_view_rows, workbooks
+        return wb_item.name, published_path, custom_view_rows, workbooks, view_content_urls
 
     published_tmp_dir = tempfile.mkdtemp(prefix="wbcompare-")
     try:
@@ -164,7 +172,7 @@ def run_workbook_compare():
         if fetched is None:
             flash("Workbook was not found on the server.", "error")
             return redirect(url_for("workbook_compare.show_workbook_compare"))
-        workbook_name, published_path, custom_view_rows, workbooks = fetched
+        workbook_name, published_path, custom_view_rows, workbooks, view_content_urls = fetched
 
         with open(published_path, "rb") as f:
             published_twb_bytes = _read_twb_bytes(f, published_path)
@@ -198,6 +206,7 @@ def run_workbook_compare():
     for row in matched:
         _id, name, _workbook_name, view_name, owner_name, shared, created_at, updated_at, last_accessed_at = row
         view_classification = classify_view_impact(view_name, published, candidate, diff, impact["classification"])
+        view_content_url = view_content_urls.get(view_name)
         custom_views.append({
             "id": _id,
             "name": name,
@@ -214,6 +223,7 @@ def run_workbook_compare():
             "last_accessed_at": last_accessed_at,
             "impact_status": _label_for_classification(view_classification),
             "impact_severity": _severity_for_classification(view_classification),
+            "view_content_url": view_content_url,
         })
 
     plain_summary = build_plain_language_summary(impact, custom_views)
@@ -256,3 +266,78 @@ def export_pdf():
         as_attachment=True,
         download_name=f"workbook_compare_{safe_name}.pdf",
     )
+
+
+@bp.route("/workbook-compare/derived-state", methods=["POST"])
+@login_required
+def apply_derived_state_to_impact():
+    """Accept browser-captured filter/parameter state delta and apply it as evidence
+    to strengthen Custom View impact assessment.
+
+    The browser sends:
+        {
+            "base_state": {
+                "filters": [{"field_name": "Region", "worksheet_name": "Sales", "applied_values": ["East", "West"]}],
+                "parameters": [{"name": "Year", "current_value": "2024"}]
+            },
+            "custom_view_state": {
+                "filters": [...],
+                "parameters": [...]
+            }
+        }
+
+    Returns:
+        {
+            "confidence": "confirmed" | "unconfirmed" | "not_checked",
+            "note": "human-readable summary of evidence",
+            "delta_count": <number of differences between base and custom view>
+        }
+    """
+    try:
+        payload = request.get_json() or {}
+
+        # Reconstruct DerivedCustomViewState objects from the captured JSON
+        base_data = payload.get("base_state", {})
+        cv_data = payload.get("custom_view_state", {})
+
+        base_state = _reconstruct_state_from_json(base_data)
+        custom_view_state = _reconstruct_state_from_json(cv_data)
+
+        # Compute the delta
+        delta = compute_state_delta(base_state, custom_view_state)
+
+        # Apply evidence
+        evidence = apply_derived_state_evidence(delta)
+        evidence["delta_count"] = len(delta.deltas)
+
+        return jsonify(evidence), 200
+
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+def _reconstruct_state_from_json(state_dict: dict):
+    """Convert the browser's JSON representation of state back into DerivedCustomViewState."""
+    from custom_view_state import FilterState, ParameterState
+
+    filters = []
+    for f in state_dict.get("filters", []):
+        filters.append(
+            FilterState(
+                field_name=f.get("field_name", ""),
+                worksheet_name=f.get("worksheet_name", ""),
+                applied_values=f.get("applied_values", []),
+                filter_type=f.get("filter_type", "categorical"),
+            )
+        )
+
+    parameters = []
+    for p in state_dict.get("parameters", []):
+        parameters.append(
+            ParameterState(
+                name=p.get("name", ""),
+                current_value=p.get("current_value"),
+            )
+        )
+
+    return DerivedCustomViewState(filters=filters, parameters=parameters)

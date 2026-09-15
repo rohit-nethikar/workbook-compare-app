@@ -202,6 +202,7 @@
       <th>Updated</th>
       <th>Last Accessed</th>
       <th>Preview</th>
+      <th>Live State</th>
     </tr>
   </thead>
   <tbody>
@@ -222,6 +223,15 @@
           <i class="bi bi-eye"></i> Preview
         </button>
       </td>
+      <td>
+        {% if cv.view_content_url %}
+        <button type="button" class="btn btn-sm btn-outline-info derived-state-btn" data-view-url="{{ cv.view_content_url }}" data-custom-view-id="{{ cv.id }}" data-custom-view-name="{{ cv.name }}" title="Capture live filter/parameter state (sort unsupported)">
+          <i class="bi bi-funnel"></i> Check
+        </button>
+        {% else %}
+        <span class="text-muted small">—</span>
+        {% endif %}
+      </td>
     </tr>
     {% endfor %}
   </tbody>
@@ -238,7 +248,8 @@
         order: [[0, 'asc']],
         pageLength: 25,
         scrollX: true,
-        columnDefs: [{ targets: -1, orderable: false, searchable: false }]
+        // Disable sorting/searching on Preview and Live State columns
+        columnDefs: [{ targets: [10, 11], orderable: false, searchable: false }]
       });
     }
 
@@ -343,4 +354,5 @@
     }
   });
 </script>
+<script src="{{ url_for('static', filename='js/derived-state-capture.js') }}"></script>
 {% endblock %}
