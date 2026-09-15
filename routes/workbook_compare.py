@@ -110,8 +110,10 @@ def show_workbook_compare():
     workbooks = []
     try:
         pat_name, pat_secret = _credentials()
-        with tableau_client.signed_in_server(settings.server_url, site, pat_name, pat_secret) as server:
-            workbooks = _sorted_workbook_dicts(tableau_client.list_workbooks(server))
+        workbooks = tableau_client.call_with_retry(
+            settings.server_url, site, pat_name, pat_secret,
+            lambda server: _sorted_workbook_dicts(tableau_client.list_workbooks(server)),
+        )
     except Exception as exc:
         flash(f"Could not load the workbook list from Tableau Server: {exc}", "error")
     return render_template("workbook_compare.html", workbooks=workbooks, result=None)
@@ -144,20 +146,25 @@ def run_workbook_compare():
         flash(f"Could not read candidate file: {exc}", "error")
         return redirect(url_for("workbook_compare.show_workbook_compare"))
 
+    def _fetch_from_server(server):
+        wb_item = tableau_client.find_workbook_by_id_or_name(server, workbook_id)
+        if wb_item is None:
+            return None
+        published_path = tableau_client.download_workbook_definition(server, wb_item.id, published_tmp_dir)
+        custom_view_rows = tableau_client.list_custom_views(server)
+        workbooks = _sorted_workbook_dicts(tableau_client.list_workbooks(server))
+        return wb_item.name, published_path, custom_view_rows, workbooks
+
     published_tmp_dir = tempfile.mkdtemp(prefix="wbcompare-")
     try:
         pat_name, pat_secret = _credentials()
-        with tableau_client.signed_in_server(settings.server_url, site, pat_name, pat_secret) as server:
-            wb_item = tableau_client.find_workbook_by_id_or_name(server, workbook_id)
-            if wb_item is None:
-                flash("Workbook was not found on the server.", "error")
-                return redirect(url_for("workbook_compare.show_workbook_compare"))
-
-            workbook_name = wb_item.name
-            published_path = tableau_client.download_workbook_definition(server, wb_item.id, published_tmp_dir)
-
-            custom_view_rows = tableau_client.list_custom_views(server)
-            workbooks = _sorted_workbook_dicts(tableau_client.list_workbooks(server))
+        fetched = tableau_client.call_with_retry(
+            settings.server_url, site, pat_name, pat_secret, _fetch_from_server
+        )
+        if fetched is None:
+            flash("Workbook was not found on the server.", "error")
+            return redirect(url_for("workbook_compare.show_workbook_compare"))
+        workbook_name, published_path, custom_view_rows, workbooks = fetched
 
         with open(published_path, "rb") as f:
             published_twb_bytes = _read_twb_bytes(f, published_path)

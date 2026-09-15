@@ -37,8 +37,9 @@ def list_custom_views():
     custom_views = []
     try:
         pat_name, pat_secret = _credentials()
-        with tableau_client.signed_in_server(settings.server_url, site, pat_name, pat_secret) as server:
-            rows = tableau_client.list_custom_views(server)
+        rows = tableau_client.call_with_retry(
+            settings.server_url, site, pat_name, pat_secret, tableau_client.list_custom_views
+        )
 
         owner_emails = sorted({row[4] for row in rows if row[4]})
         account_numbers = db.get_account_numbers(owner_emails)

@@ -55,6 +55,26 @@ def signed_in_server(server_url: str, site_name: str, pat_name: str, pat_secret:
         yield server
 
 
+def call_with_retry(server_url: str, site_name: str, pat_name: str, pat_secret: str, fn):
+    """Signs in, runs `fn(server)`, and retries ONCE with a brand-new sign-in if the
+    session was invalidated mid-call (TSC.NotSignedInError - raised for any 401,
+    including a session that simply expired; see the "TODO: catch this in server.py
+    and attempt to sign in again" comment in TSC's own endpoint.py, which never got
+    implemented, leaving retry-on-session-expiry to callers like this one).
+
+    This PAT is also used by other apps/schedulers signing in independently against
+    the same Tableau Server account - any of those sign-ins can invalidate this
+    session's token mid-request, not just a slow request outliving its own timeout.
+    A fresh sign-in is cheap, so retrying once here is enough for both causes."""
+    for attempt in range(2):
+        try:
+            with signed_in_server(server_url, site_name, pat_name, pat_secret) as server:
+                return fn(server)
+        except TSC.NotSignedInError:
+            if attempt == 1:
+                raise
+
+
 def list_workbooks(server) -> list:
     """Returns WorkbookItem objects for every workbook on the site."""
     return list(TSC.Pager(server.workbooks))
