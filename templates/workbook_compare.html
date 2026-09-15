@@ -1,0 +1,335 @@
+{% extends "base.html" %}
+{% block title %}Workbook Compare{% endblock %}
+{% block content %}
+<h1 class="mb-3">🔀 Workbook Compare</h1>
+<p class="text-muted small">
+  Compares a candidate .twbx/.twb you upload against the workbook's currently
+  <strong>published</strong> definition on the server (downloaded live, without its
+  extract &mdash; the extract itself is never read). Strictly read-only: nothing is
+  published, overwritten, or deleted. Impact on existing custom views is
+  <strong>inferred, never certain</strong> &mdash; Tableau's REST/Metadata APIs don't expose
+  a custom view's saved filter, parameter, or sort state, so this only flags views whose
+  underlying structure changed; it can't see what's actually saved inside them.
+</p>
+
+<div class="card mb-4" style="background-color: var(--bg-secondary); border: 1px solid var(--border-light);">
+  <div class="card-body">
+    <form method="post" action="{{ url_for('workbook_compare.run_workbook_compare') }}" enctype="multipart/form-data" class="row g-2 align-items-end">
+      <div class="col-md-5">
+        <label class="form-label small text-muted mb-1">Workbook (published, on server)</label>
+        <select name="workbook_id" class="form-select form-select-sm" required>
+          <option value="">Select a workbook&hellip;</option>
+          {% for wb in workbooks %}
+          <option value="{{ wb.id }}" {{ "selected" if result and result.workbook_name == wb.name else "" }}>{{ wb.name }}{% if wb.project_name %} ({{ wb.project_name }}){% endif %}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-5">
+        <label class="form-label small text-muted mb-1">Candidate file (.twbx or .twb)</label>
+        <input type="file" name="candidate_file" accept=".twbx,.twb" class="form-control form-control-sm" required>
+      </div>
+      <div class="col-md-2">
+        <button type="submit" class="btn btn-sm btn-primary w-100">Compare</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% if result %}
+{% set risk = result.impact.risk_level %}
+{% set risk_class = {'High': 'bg-danger', 'Medium': 'bg-warning text-dark', 'Low': 'bg-secondary', 'None': 'bg-success'}.get(risk, 'bg-secondary') %}
+
+<div class="alert d-flex align-items-center justify-content-between gap-2 {{ 'alert-danger' if risk == 'High' else ('alert-warning' if risk == 'Medium' else ('alert-secondary' if risk == 'Low' else 'alert-success')) }}">
+  <div class="d-flex align-items-center gap-2">
+    <span class="badge {{ risk_class }}">{{ risk }} risk</span>
+    <span>
+      <strong>{{ result.diff.total }}</strong> structural change(s) detected between the uploaded candidate and the
+      published "{{ result.workbook_name }}" &mdash; {{ result.custom_views | length }} existing custom view(s) reference this workbook.
+    </span>
+  </div>
+  <button type="button" class="btn btn-sm btn-outline-danger flex-shrink-0" id="export-pdf-btn">
+    <i class="bi bi-file-earmark-pdf"></i> Download PDF Report
+  </button>
+</div>
+
+<!-- Plain-language summary: written for someone who isn't going to read the
+     technical findings/diff below and just needs to know if/why this is safe. -->
+{% set ps = result.plain_summary %}
+{% set ps_border = {'danger': 'border-danger', 'warning': 'border-warning', 'info': 'border-info', 'success': 'border-success'}.get(ps.tone, 'border-secondary') %}
+<div class="card mb-4 border-start border-4 {{ ps_border }}" style="background-color: var(--bg-secondary); border-top: 1px solid var(--border-light); border-right: 1px solid var(--border-light); border-bottom: 1px solid var(--border-light);">
+  <div class="card-body">
+    <h5 style="color: var(--text-primary);">📋 Plain-Language Summary</h5>
+    <p class="mb-3" style="font-size: 1.05rem; color: var(--text-primary);"><strong>{{ ps.headline }}</strong></p>
+
+    {% if ps.total_views %}
+    <div class="d-flex flex-wrap gap-2 mb-3">
+      {% if ps.view_counts.directly_impacted %}<span class="badge bg-danger">{{ ps.view_counts.directly_impacted }} likely affected</span>{% endif %}
+      {% if ps.view_counts.potentially_impacted %}<span class="badge bg-warning text-dark">{{ ps.view_counts.potentially_impacted }} possibly affected</span>{% endif %}
+      {% if ps.view_counts.label_change_only %}<span class="badge bg-info text-dark">{{ ps.view_counts.label_change_only }} label change only</span>{% endif %}
+      {% if ps.view_counts.no_change %}<span class="badge bg-success">{{ ps.view_counts.no_change }} unaffected</span>{% endif %}
+    </div>
+    {% endif %}
+
+    {% if ps.reasons %}
+    <p class="text-muted small mb-1">Why:</p>
+    <ul class="mb-0">
+      {% for r in ps.reasons %}
+      <li style="color: var(--text-primary);">{{ r.text }}</li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="text-muted mb-0">Nothing about this candidate file is different from what's currently published, so there's nothing that could change how a saved custom view looks or behaves.</p>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Summary count chips -->
+<div class="mb-4 d-flex flex-wrap gap-2">
+  {% for key, val in result.diff.counts.items() %}
+  {% if val %}
+  <span class="badge bg-secondary">{{ key | replace('_', ' ') }}: {{ val }}</span>
+  {% endif %}
+  {% endfor %}
+</div>
+
+<!-- Impact findings -->
+<div class="card mb-4" style="background-color: var(--bg-secondary); border: 1px solid var(--border-light);">
+  <div class="card-body">
+    <h5 style="color: var(--text-primary);">Custom View Impact Findings</h5>
+    {% if not result.impact.findings %}
+    <p class="text-muted mb-0">No structural changes that would affect saved custom view state were detected.</p>
+    {% else %}
+    <ul class="list-group list-group-flush">
+      {% for f in result.impact.findings %}
+      <li class="list-group-item d-flex gap-3" style="background-color: transparent;">
+        <span class="badge {{ 'bg-danger' if f.severity == 'High' else ('bg-warning text-dark' if f.severity == 'Medium' else 'bg-secondary') }}" style="min-width: 4.5rem;">{{ f.severity }}</span>
+        <div>
+          <div><strong>{{ f.title }}</strong> <span class="text-muted small">&mdash; {{ f.category }}</span></div>
+          <div class="small text-muted">{{ f.detail }}</div>
+          {% if f.sheets %}<div class="small text-muted">Sheets: {{ f.sheets | join(', ') }}</div>{% endif %}
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Structural diff, grouped -->
+<div class="card mb-4" style="background-color: var(--bg-secondary); border: 1px solid var(--border-light);">
+  <div class="card-body">
+    <h5 style="color: var(--text-primary);">Structural Diff</h5>
+    {% if not result.diff.groups %}
+    <p class="text-muted mb-0">No differences found &mdash; the candidate matches the published workbook.</p>
+    {% else %}
+    {% for group in result.diff.groups %}
+    <h6 class="mt-3">{{ group.title }} <span class="badge bg-secondary">{{ group.items | length }}</span></h6>
+    <ul class="list-group list-group-flush mb-2">
+      {% for item in group.items %}
+      <li class="list-group-item" style="background-color: transparent;">
+        <span class="badge {{ 'bg-success' if item.op == 'add' else ('bg-danger' if item.op == 'remove' else 'bg-info text-dark') }}">
+          {{ '+ Added' if item.op == 'add' else ('- Removed' if item.op == 'remove' else '~ Changed') }}
+        </span>
+        <span class="ms-2">{{ item.label }}</span>
+
+        {% if item.parts %}
+        <table class="table table-sm mt-2 mb-0">
+          <thead><tr><th>Attribute</th><th>Published</th><th>Candidate</th></tr></thead>
+          <tbody>
+            {% for part in item.parts %}
+            <tr>
+              <td>{{ part.attr }}</td>
+              <td><code>{{ part.before }}</code></td>
+              <td><code>{{ part.after }}</code></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% elif group.key == 'calcs' and (item.before or item.after) %}
+        <details class="mt-2">
+          <summary class="small text-muted" style="cursor: pointer;">Show formula before/after</summary>
+          <div class="row g-2 mt-1">
+            <div class="col-md-6">
+              <div class="small text-muted mb-1">Published</div>
+              <pre class="p-2 mb-0" style="background-color: var(--bg-primary); border: 1px solid var(--border-light); white-space: pre-wrap;">{{ item.before or '(none)' }}</pre>
+            </div>
+            <div class="col-md-6">
+              <div class="small text-muted mb-1">Candidate</div>
+              <pre class="p-2 mb-0" style="background-color: var(--bg-primary); border: 1px solid var(--border-light); white-space: pre-wrap;">{{ item.after or '(none)' }}</pre>
+            </div>
+          </div>
+        </details>
+        {% elif item.before is not none or item.after is not none %}
+        <div class="small mt-1"><code>{{ item.before }}</code> &rarr; <code>{{ item.after }}</code></div>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% endfor %}
+    {% endif %}
+  </div>
+</div>
+
+<!-- Custom views potentially affected -->
+<div class="d-flex justify-content-between align-items-center mb-2">
+  <h5 style="color: var(--text-primary); margin: 0;">Existing Custom Views on "{{ result.workbook_name }}"</h5>
+  <div class="d-flex gap-2">
+    <button type="button" class="btn btn-sm btn-outline-secondary" id="export-csv-btn">
+      <i class="bi bi-filetype-csv"></i> Export CSV
+    </button>
+    <button type="button" class="btn btn-sm btn-outline-secondary" id="export-json-btn">
+      <i class="bi bi-filetype-json"></i> Export JSON
+    </button>
+  </div>
+</div>
+
+{% if not result.custom_views %}
+<div style="background-color: rgba(91, 192, 222, 0.1); border-left: 4px solid var(--info); padding: 16px; border-radius: 4px; color: var(--text-primary);">
+  ℹ️ No custom views found for this workbook. A non-admin PAT only sees views it owns or that are marked shared.
+</div>
+{% else %}
+<table id="custom-views-table" class="table table-striped table-bordered w-100">
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th>Base View</th>
+      <th>Owner</th>
+      <th>Owner Email</th>
+      <th>Account #</th>
+      <th>Shared?</th>
+      <th>Impact</th>
+      <th>Created</th>
+      <th>Updated</th>
+      <th>Last Accessed</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for cv in result.custom_views %}
+    <tr>
+      <td><strong>{{ cv.name }}</strong></td>
+      <td>{{ cv.view_name or "" }}</td>
+      <td>{{ cv.owner_name or "" }}</td>
+      <td><span style="font-family: monospace; color: var(--accent);">{{ cv.owner_email or "—" }}</span></td>
+      <td>{{ cv.owner_account_number or "—" }}</td>
+      <td>{% if cv.shared %}<span class="badge badge-success">🔓 Shared</span>{% else %}<span class="badge badge-warning">🔒 Private</span>{% endif %}</td>
+      <td><span class="badge {{ 'bg-danger' if cv.impact_severity == 'High' else ('bg-warning text-dark' if cv.impact_severity == 'Medium' else ('bg-secondary' if cv.impact_severity == 'Low' else 'bg-success')) }}">{{ cv.impact_status }}</span></td>
+      <td><span style="color: var(--text-secondary);">{{ cv.created_at or "—" }}</span></td>
+      <td><span style="color: var(--text-secondary);">{{ cv.updated_at or "—" }}</span></td>
+      <td><span style="color: var(--text-secondary);">{{ cv.last_accessed_at or "—" }}</span></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  $(document).ready(function () {
+    if ($('#custom-views-table').length) {
+      initDataTable('#custom-views-table', { order: [[0, 'asc']], pageLength: 25, scrollX: true });
+    }
+
+    var exportBtn = document.getElementById('export-json-btn');
+    if (exportBtn) {
+      exportBtn.addEventListener('click', function () {
+        var data = {{ (result.custom_views | tojson) if result else '[]' }};
+        var blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = 'custom_views_{{ (result.workbook_name | replace(" ", "_")) if result else "export" }}.json';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      });
+    }
+
+    var exportCsvBtn = document.getElementById('export-csv-btn');
+    if (exportCsvBtn) {
+      exportCsvBtn.addEventListener('click', function () {
+        var data = {{ (result.custom_views | tojson) if result else '[]' }};
+        var columns = [
+          ['name', 'Name'],
+          ['view_name', 'Base View'],
+          ['owner_name', 'Owner'],
+          ['owner_email', 'Owner Email'],
+          ['owner_account_number', 'Account #'],
+          ['shared', 'Shared?'],
+          ['impact_status', 'Impact'],
+          ['created_at', 'Created'],
+          ['updated_at', 'Updated'],
+          ['last_accessed_at', 'Last Accessed']
+        ];
+        var csvEscape = function (value) {
+          if (value === null || value === undefined) { return ''; }
+          if (typeof value === 'boolean') { value = value ? 'Yes' : 'No'; }
+          var s = String(value);
+          if (/[",\n]/.test(s)) {
+            s = '"' + s.replace(/"/g, '""') + '"';
+          }
+          return s;
+        };
+        var lines = [columns.map(function (c) { return csvEscape(c[1]); }).join(',')];
+        data.forEach(function (cv) {
+          lines.push(columns.map(function (c) { return csvEscape(cv[c[0]]); }).join(','));
+        });
+        var blob = new Blob([lines.join('\r\n')], { type: 'text/csv' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = 'custom_views_{{ (result.workbook_name | replace(" ", "_")) if result else "export" }}.csv';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      });
+    }
+
+    var exportPdfBtn = document.getElementById('export-pdf-btn');
+    if (exportPdfBtn) {
+      exportPdfBtn.addEventListener('click', function () {
+        var payload = {
+          workbook_name: {{ (result.workbook_name | tojson) if result else '""' }},
+          site: {{ (current_site | tojson) if current_site else '""' }},
+          diff: {{ (result.diff_json | tojson) if result else '{}' }},
+          impact: {{ (result.impact | tojson) if result else '{}' }},
+          custom_views: {{ (result.custom_views | tojson) if result else '[]' }},
+          plain_summary: {{ (result.plain_summary | tojson) if result else '{}' }}
+        };
+        exportPdfBtn.disabled = true;
+        var originalHtml = exportPdfBtn.innerHTML;
+        exportPdfBtn.innerHTML = 'Generating&hellip;';
+        fetch("{{ url_for('workbook_compare.export_pdf') }}", {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        })
+          .then(function (resp) {
+            if (!resp.ok) { throw new Error('Server returned ' + resp.status); }
+            return resp.blob();
+          })
+          .then(function (blob) {
+            var url = URL.createObjectURL(blob);
+            var a = document.createElement('a');
+            a.href = url;
+            a.download = 'workbook_compare_' + (payload.workbook_name || 'workbook').replace(/\s+/g, '_') + '.pdf';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+          })
+          .catch(function (err) {
+            alert('Could not generate PDF report: ' + err.message);
+          })
+          .finally(function () {
+            exportPdfBtn.disabled = false;
+            exportPdfBtn.innerHTML = originalHtml;
+          });
+      });
+    }
+  });
+</script>
+{% endblock %}

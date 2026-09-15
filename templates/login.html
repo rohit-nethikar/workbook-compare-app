@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Login{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-4 mt-5">
+    <div class="card shadow-sm">
+      <div class="card-body p-4">
+        <h3 class="mb-3 text-center"><i class="bi bi-lock"></i> Enter Passcode</h3>
+        <form method="post">
+          <input type="password" name="passcode" class="form-control mb-3" placeholder="Passcode" autofocus required>
+          <button type="submit" class="btn btn-primary w-100">Unlock</button>
+        </form>
+        <p class="text-muted small mt-3 mb-0">
+          This unlocks the local dashboard UI. It's separate from your Tableau Personal Access Token,
+          which is stored encrypted and never shown again.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

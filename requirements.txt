@@ -1,0 +1,11 @@
+Flask==3.0.3
+tableauserverclient==0.32
+reportlab==4.2.5
+PyYAML==6.0.2
+cryptography==43.0.1
+waitress==3.0.2
+google-cloud-bigquery==3.23.1
+
+# Testing dependencies
+pytest==7.4.3
+pytest-cov==4.1.0

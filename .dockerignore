@@ -1,0 +1,49 @@
+# Git / editor
+.git
+.gitignore
+.github
+.claude
+.vscode
+.idea
+
+# Python
+__pycache__
+*.py[cod]
+*.pyd
+*.so
+.venv
+venv
+env
+ENV
+*.egg-info
+dist
+build
+
+# Local runtime data / secrets
+instance
+data
+*.db
+*.sqlite
+*.sqlite3
+.env
+.env.*
+*.key
+bigquery-credentials.json
+*-credentials.json
+
+# Logs / process files
+*.log
+*.pid
+
+# Local backups / patches
+.patch-backups
+*.backup-*
+*.bak
+backups
+
+# Docs build output / temporary
+site
+.cache
+project-tree.txt
+*.tmp
+*.temp

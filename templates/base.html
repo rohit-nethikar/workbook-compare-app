@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Workbook Compare{% endblock %}</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+<link href="https://cdn.datatables.net/1.13.8/css/dataTables.bootstrap5.min.css" rel="stylesheet">
+<link href="{{ url_for('static', filename='css/app.css') }}" rel="stylesheet">
+</head>
+<body>
+{% if session.get('authed') %}
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark sticky-top mb-4">
+  <div class="container-fluid">
+    <a class="navbar-brand d-flex align-items-center gap-2" href="{{ url_for('workbook_compare.show_workbook_compare') }}">
+      <i class="bi bi-file-diff"></i> Workbook Compare
+    </a>
+    <div class="d-flex flex-lg-row flex-column align-items-lg-center gap-2 ms-auto">
+      {% if available_sites and available_sites|length > 1 %}
+      <div class="dropdown me-lg-2">
+        <button class="btn btn-outline-light btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+          <i class="bi bi-hdd-network"></i> {{ current_site }}
+        </button>
+        <ul class="dropdown-menu dropdown-menu-end">
+          {% for site in available_sites %}
+          <li>
+            <form method="post" action="{{ url_for('switch_site') }}">
+              <input type="hidden" name="site" value="{{ site }}">
+              <button type="submit" class="dropdown-item {{ 'active' if site == current_site else '' }}">{{ site }}</button>
+            </form>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+      <button class="theme-toggle btn btn-outline-light btn-sm me-lg-2" type="button" title="Toggle dark mode">🌙 Dark Mode</button>
+      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('auth_routes.logout') }}"><i class="bi bi-box-arrow-right"></i> Logout</a>
+    </div>
+  </div>
+</nav>
+{% endif %}
+
+<div class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index: 1080" id="toast-container">
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+    <div class="toast align-items-center text-bg-{{ 'danger' if category == 'error' else 'success' }} border-0" role="alert" aria-live="assertive" aria-atomic="true" data-bs-delay="5000">
+      <div class="d-flex">
+        <div class="toast-body">{{ message }}</div>
+        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+      </div>
+    </div>
+    {% endfor %}
+  {% endwith %}
+</div>
+
+<div class="container-fluid page-fade">
+  {% block content %}{% endblock %}
+
+  <footer class="app-footer text-muted small text-center py-4">
+    Workbook Compare &mdash; internal tool
+  </footer>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.8/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.8/js/dataTables.bootstrap5.min.js"></script>
+<script src="{{ url_for('static', filename='js/datatables-common.js') }}"></script>
+<script src="{{ url_for('static', filename='js/dark-mode.js') }}"></script>
+<script>
+  // Shared toast helper - pages fire this instead of relying on a server
+  // redirect + flash banner for actions handled over fetch().
+  function showToast(message, category) {
+    var container = document.getElementById('toast-container');
+    if (!container) { return; }
+    var el = document.createElement('div');
+    el.className = 'toast align-items-center text-bg-' + (category === 'error' ? 'danger' : 'success') + ' border-0';
+    el.setAttribute('role', 'alert');
+    el.innerHTML = '<div class="d-flex"><div class="toast-body"></div>' +
+      '<button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button></div>';
+    el.querySelector('.toast-body').textContent = message;
+    container.appendChild(el);
+    var toast = new bootstrap.Toast(el, { delay: 5000 });
+    el.addEventListener('hidden.bs.toast', function () { el.remove(); });
+    toast.show();
+  }
+
+  document.querySelectorAll('#toast-container .toast').forEach(function (el) {
+    new bootstrap.Toast(el).show();
+  });
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

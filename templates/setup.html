@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Setup{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-6 mt-4">
+    <h3 class="mb-3 text-center"><i class="bi bi-gear"></i> {{ "Update" if already_configured else "First-Time Setup" }}</h3>
+
+    <div class="alert alert-info small">
+      Server URL and sites are set in <code>config.yaml</code>:<br>
+      <strong>Server:</strong> {{ server_url }}<br>
+      <strong>Sites:</strong> {{ sites|join(", ") }}<br>
+      The Personal Access Token below must have access to every site listed above.
+      Edit that file and restart the app if these are wrong.
+    </div>
+
+    <form method="post">
+      <div class="mb-3">
+        <label class="form-label">Personal Access Token Name</label>
+        <input type="text" name="pat_name" class="form-control" required>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Personal Access Token Secret</label>
+        <input type="password" name="pat_secret" class="form-control" required>
+        <div class="form-text">Generate this in Tableau Server under your account settings &rarr; Personal Access Tokens. It's encrypted at rest and never displayed again.</div>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Dashboard Passcode</label>
+        <input type="password" name="passcode" class="form-control" required>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Confirm Passcode</label>
+        <input type="password" name="passcode_confirm" class="form-control" required>
+      </div>
+      <button type="submit" class="btn btn-primary">Save &amp; Sign In</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,20 @@
+# Non-secret settings. Secrets (PAT, passcode hash) live encrypted/hashed in the SQLite
+# DB, entered via the /setup screen the first time you run the app - never put them here.
+
+server_url: "https://qualityanalytics.mayocliniclabs.com"
+# Where the app itself listens. "127.0.0.1" (default) only accepts connections from
+# this machine. Set to "0.0.0.0" to accept connections from other machines on the
+# network - do this only on a trusted internal network/VLAN.
+host: "0.0.0.0"
+# Different default port than tableau-admin-dashboard (5000) so both apps can run on
+# the same machine at once.
+port: 5001
+# Each entry is a site's content URL - the segment right after /#/site/ in your
+# browser's address bar. The same PAT must have access to every site listed here.
+sites:
+  - "ClientFeeSchedule-DEV"
+  - "InteractiveDashboards"
+  - "InteractiveDashboards-DEV"
+  - "InteractiveDashboards-INT"
+  - "InteractiveDashboards-TST"
+default_site: "InteractiveDashboards-DEV"    # used for initial setup validation and as the fallback when no site has been selected yet

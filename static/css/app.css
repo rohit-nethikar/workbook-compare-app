@@ -1,0 +1,51 @@
+/* Minimal stylesheet for this standalone app - ports only the custom CSS variables
+   and badge classes that templates/workbook_compare.html actually references (see
+   tableau-admin-dashboard/static/css/modern.css for the full design system this was
+   trimmed from). Everything else in the template is stock Bootstrap 5.3.3. */
+
+:root {
+  --accent: #00A3E0;
+  --success: #5CB85C;
+  --warning: #FFB81C;
+  --info: #5BC0DE;
+
+  --bg-primary: #F5F7FA;
+  --bg-secondary: #FFFFFF;
+  --text-primary: #212529;
+  --text-secondary: #6C757D;
+  --border-light: #E9ECEF;
+}
+
+body.dark-mode {
+  --bg-primary: #1A1A1A;
+  --bg-secondary: #2D2D2D;
+  --text-primary: #E4E4E4;
+  --text-secondary: #B0B0B0;
+  --border-light: #4A4A4A;
+}
+
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.badge-success {
+  background-color: rgba(92, 184, 92, 0.1);
+  color: var(--success);
+}
+
+.badge-warning {
+  background-color: rgba(255, 184, 28, 0.1);
+  color: var(--warning);
+}
