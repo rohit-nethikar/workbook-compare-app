@@ -2,6 +2,7 @@
 import io
 import re
 import xml.etree.ElementTree as ET
+from difflib import SequenceMatcher
 import zipfile
 from dataclasses import dataclass, field
 from typing import Optional
@@ -916,21 +917,25 @@ DOC_SEVERITY = {
 # document. Anything unmatched falls back to At-risk so it gets reviewed, not ignored.
 _DOC_CATEGORY_RULES = [
     ('Views', 'New view', DOC_SAFE),
+    ('Views', 'possibly renamed', DOC_AT_RISK),
     ('Views', 'removed or renamed', DOC_DESTRUCTIVE),
+    ('Fields', 'possibly renamed', DOC_AT_RISK),
     ('Fields', 'removed', DOC_DESTRUCTIVE),
     ('Fields', 'datatype changed', DOC_AT_RISK),
     ('Fields', 'role changed', DOC_AT_RISK),
     ('Fields', 'caption changed', DOC_SAFE),
     ('Fields', 'default aggregation', DOC_REGRESSION),
     ('Data Sources', '', DOC_AT_RISK),
-    ('Data Source Filters', 'removed', DOC_AT_RISK),
+    ('Data Source Filters', 'removed', DOC_DESTRUCTIVE),
     ('Data Source Filters', '', DOC_REGRESSION),
+    ('Parameters', 'possibly renamed', DOC_AT_RISK),
     ('Parameters', 'removed', DOC_DESTRUCTIVE),
     ('Parameters', 'New parameter', DOC_SAFE),
     ('Parameters', 'caption', DOC_SAFE),
     ('Parameters', '', DOC_AT_RISK),
     ('Filters', 'on removed field', DOC_DESTRUCTIVE),
-    ('Filters', 'card removed', DOC_AT_RISK),
+    ('Filters', 'renamed', DOC_AT_RISK),
+    ('Filters', 'card removed', DOC_DESTRUCTIVE),
     ('Filters', 'condition changed', DOC_REGRESSION),
     ('Filters', 'New filter', DOC_REGRESSION),
     ('Filters', 'shown', DOC_SAFE),
@@ -964,6 +969,49 @@ def worst_doc_category(categories) -> str:
     return max(categories, key=lambda c: DOC_RANK[c], default=DOC_SAFE)
 
 
+# Deployment treatment for each category, from Section 1 of the findings document.
+DOC_TREATMENT = {
+    DOC_SAFE: 'Normal deployment with a basic smoke test.',
+    DOC_REGRESSION: 'Run targeted regression tests.',
+    DOC_AT_RISK: 'Identify the candidate views and users, then test them.',
+    DOC_DESTRUCTIVE: 'Plan recreation or redesign, and communicate with the affected owners.',
+}
+
+# Shown with every result. The document is explicit that these are candidates, not proof.
+DOC_CAVEAT = (
+    'These are candidate impacts inferred from workbook structure. They do not prove that a '
+    'particular saved view will fail. Validate representative scenarios before relying on them.'
+)
+
+RENAME_SIMILARITY = 0.8
+
+
+def _likely_renames(removed, added, is_compatible=lambda old, new: True) -> dict:
+    """Pair removed names with added names that look like renames: similar text and
+    accepted by is_compatible. Best matches are taken first, one-to-one."""
+    candidates = []
+    for old in removed:
+        for new in added:
+            if not is_compatible(old, new):
+                continue
+            ratio = SequenceMatcher(None, old.lower(), new.lower()).ratio()
+            if ratio >= RENAME_SIMILARITY:
+                candidates.append((ratio, old, new))
+
+    pairs, used_old, used_new = {}, set(), set()
+    for _, old, new in sorted(candidates, reverse=True):
+        if old in used_old or new in used_new:
+            continue
+        pairs[old] = new
+        used_old.add(old)
+        used_new.add(new)
+    return pairs
+
+
+def _normalize_formula(formula: str) -> str:
+    return ' '.join(formula.split())
+
+
 def classify_custom_view_impact(published: WorkbookStructure, candidate: WorkbookStructure, diff: WorkbookDiff) -> dict:
     """Classify impact level for custom view notifications.
 
@@ -980,7 +1028,20 @@ def classify_custom_view_impact(published: WorkbookStructure, candidate: Workboo
     pub_views = published.worksheets | published.dashboards
     cand_views = candidate.worksheets | candidate.dashboards
 
-    for v in pub_views - cand_views:
+    # A removed view whose name closely matches an added one is treated as a rename
+    # (At-risk), not a removal (Destructive). This is a name-similarity guess, so the
+    # finding says "possibly renamed" and the candidate still needs testing.
+    view_renames = _likely_renames(pub_views - cand_views, cand_views - pub_views)
+    for old, new in sorted(view_renames.items()):
+        findings.append({
+            'category': 'Views',
+            'severity': 'Medium',
+            'title': f'Base view "{old}" possibly renamed to "{new}"',
+            'detail': 'Looks like a rename. Custom views on the old name may not map to the new one; test them.',
+            'sheets': [old]
+        })
+
+    for v in sorted((pub_views - cand_views) - set(view_renames)):
         findings.append({
             'category': 'Views',
             'severity': 'High',
@@ -989,9 +1050,28 @@ def classify_custom_view_impact(published: WorkbookStructure, candidate: Workboo
             'sheets': [v]
         })
 
-    # Removed fields
-    for fk in set(published.fields.keys()) - set(candidate.fields.keys()):
-        f = published.fields[fk]
+    # Removed fields, with likely renames split out the same way as views. A field
+    # only counts as renamed when its datatype and role match.
+    field_renames = _likely_renames(
+        set(published.fields) - set(candidate.fields),
+        set(candidate.fields) - set(published.fields),
+        is_compatible=lambda old, new: (
+            published.fields[old]['datatype'] == candidate.fields[new]['datatype']
+            and published.fields[old]['role'] == candidate.fields[new]['role']
+        ),
+    )
+    removed_field_keys = (set(published.fields.keys()) - set(candidate.fields.keys())) - set(field_renames)
+
+    for old, new in sorted(field_renames.items()):
+        findings.append({
+            'category': 'Fields',
+            'severity': 'Medium',
+            'title': f'Field "{old}" possibly renamed to "{new}"',
+            'detail': 'Looks like a rename. Filters and calculations that use the old name may not resolve; test them.',
+            'sheets': []
+        })
+
+    for fk in sorted(removed_field_keys):
         findings.append({
             'category': 'Fields',
             'severity': 'High',
@@ -1100,8 +1180,24 @@ def classify_custom_view_impact(published: WorkbookStructure, candidate: Workboo
                 'sheets': []
             })
 
+    # Parameters that look renamed (same datatype, similar name) are split out of
+    # the removed/new lists below, as with views and fields.
+    param_renames = _likely_renames(
+        set(published.parameters) - set(candidate.parameters),
+        set(candidate.parameters) - set(published.parameters),
+        is_compatible=lambda old, new: published.parameters[old]['datatype'] == candidate.parameters[new]['datatype'],
+    )
+    for old, new in sorted(param_renames.items()):
+        findings.append({
+            'category': 'Parameters',
+            'severity': 'Medium',
+            'title': f'Parameter "{old}" possibly renamed to "{new}"',
+            'detail': 'Looks like a rename. Saved selections on the old parameter name may not carry over; test them.',
+            'sheets': []
+        })
+
     # Removed parameters
-    for pk in set(published.parameters.keys()) - set(candidate.parameters.keys()):
+    for pk in sorted((set(published.parameters.keys()) - set(candidate.parameters.keys())) - set(param_renames)):
         findings.append({
             'category': 'Parameters',
             'severity': 'High',
@@ -1138,7 +1234,7 @@ def classify_custom_view_impact(published: WorkbookStructure, candidate: Workboo
 
     # New parameter added (low severity, informational) - mirrors "new view
     # added" below; nothing depends on it yet.
-    for pk in set(candidate.parameters.keys()) - set(published.parameters.keys()):
+    for pk in (set(candidate.parameters.keys()) - set(published.parameters.keys())) - set(param_renames.values()):
         findings.append({
             'category': 'Parameters',
             'severity': 'Low',
@@ -1150,7 +1246,6 @@ def classify_custom_view_impact(published: WorkbookStructure, candidate: Workboo
     # Filters whose underlying field was removed (checked per-field, not just
     # "sheet lost all its filters" - a sheet can keep some filters while one
     # specific filtered field disappears).
-    removed_field_keys = set(published.fields.keys()) - set(candidate.fields.keys())
     for ws, filt_map in published.filters.items():
         if ws not in cand_views:
             continue  # already covered by the base-view-removed finding above
@@ -1161,6 +1256,16 @@ def classify_custom_view_impact(published: WorkbookStructure, candidate: Workboo
                 'severity': 'High',
                 'title': f'Filter on removed field(s) in "{ws}"',
                 'detail': f"{', '.join(broken)} removed; the saved filter selection will reset.",
+                'sheets': [ws]
+            })
+
+        renamed = [fk for fk in filt_map.keys() if fk in field_renames]
+        if renamed:
+            findings.append({
+                'category': 'Filters',
+                'severity': 'Medium',
+                'title': f'Filter on renamed field(s) in "{ws}"',
+                'detail': f"{', '.join(renamed)} may have been renamed; the saved filter selection may not map to the new field.",
                 'sheets': [ws]
             })
 
@@ -1191,7 +1296,10 @@ def classify_custom_view_impact(published: WorkbookStructure, candidate: Workboo
     for ws in set(published.filters.keys()) & cand_views:
         pub_fmap = published.filters[ws]
         cand_fmap = candidate.filters.get(ws, {})
-        dropped = [fk for fk in pub_fmap.keys() if fk not in cand_fmap and fk not in removed_field_keys]
+        dropped = [
+            fk for fk in pub_fmap.keys()
+            if fk not in cand_fmap and fk not in removed_field_keys and fk not in field_renames
+        ]
         if dropped:
             findings.append({
                 'category': 'Filters',
@@ -1281,15 +1389,15 @@ def classify_custom_view_impact(published: WorkbookStructure, candidate: Workboo
                 'sheets': [ws]
             })
 
-    # Calculated field's referenced-field set changes - a pure logic edit
-    # that keeps referencing the same fields stays out of scope (matches this
-    # classifier's "custom view state" scope, not "did the numbers change"),
-    # but a calc that starts/stops referencing a different field is a proxy
-    # for "stored filters/sorts on this calc may now behave differently."
+    # Calculated field logic changes. A changed referenced-field set is At-risk-leaning
+    # (stored filters/sorts may behave differently); a logic change that keeps the same
+    # references is Regression-test required (the output may differ). Whitespace-only
+    # edits are ignored.
     for fk in set(published.fields.keys()) & set(candidate.fields.keys()):
         pf = published.fields[fk]
         cf = candidate.fields[fk]
-        if pf.get('formula') and cf.get('formula') and pf['formula'] != cf['formula']:
+        if (pf.get('formula') and cf.get('formula')
+                and _normalize_formula(pf['formula']) != _normalize_formula(cf['formula'])):
             pub_refs = _referenced_fields(pf['formula'])
             cand_refs = _referenced_fields(cf['formula'])
             if pub_refs != cand_refs:
@@ -1301,6 +1409,14 @@ def classify_custom_view_impact(published: WorkbookStructure, candidate: Workboo
                     'title': f'Calculation "{fk}" now references different fields',
                     'detail': f"Removed: {', '.join(removed_refs) or '(none)'}; added: {', '.join(added_refs) or '(none)'}. "
                               f"Downstream filters/sorts on this calc may behave differently even though the field itself still exists.",
+                    'sheets': []
+                })
+            else:
+                findings.append({
+                    'category': 'Calculations',
+                    'severity': 'Low',
+                    'title': f'Calculation "{fk}" formula changed',
+                    'detail': 'Same fields referenced, but the logic changed. Results may differ; validate the output.',
                     'sheets': []
                 })
 
@@ -1434,8 +1550,9 @@ def classify_custom_view_impact(published: WorkbookStructure, candidate: Workboo
                     'sheets': [ws]
                 })
 
-    # Added views (low severity, informational)
-    for v in cand_views - pub_views:
+    # Added views (low severity, informational). A rename's new name is already
+    # reported under the rename finding, so it is not repeated here.
+    for v in sorted((cand_views - pub_views) - set(view_renames.values())):
         findings.append({
             'category': 'Views',
             'severity': 'Low',
@@ -1479,27 +1596,6 @@ def classify_custom_view_impact(published: WorkbookStructure, candidate: Workboo
         'classification': classification,
         'doc_category': worst_doc_category(f['doc_category'] for f in findings),
     }
-
-
-def classify_view_impact(view_name: str, published: WorkbookStructure, candidate: WorkbookStructure,
-                          diff: WorkbookDiff, workbook_classification: str) -> str:
-    """Refine the workbook-level classification for one specific custom view, using its
-    own base view (view_name) rather than applying 'directly_impacted' to every custom
-    view whenever *any* view in the workbook was removed/renamed.
-    """
-    pub_views = published.worksheets | published.dashboards
-    cand_views = candidate.worksheets | candidate.dashboards
-    removed_views = pub_views - cand_views
-
-    if view_name and view_name in removed_views:
-        return 'directly_impacted'
-
-    if workbook_classification == 'directly_impacted':
-        # The view removal that drove the workbook-level rating belongs to a
-        # different view - this one is only exposed to the remaining changes.
-        return 'potentially_impacted' if diff.total > 0 else 'no_change'
-
-    return workbook_classification
 
 
 def view_doc_category(view_name: str, impact: dict) -> str:
@@ -1667,9 +1763,19 @@ def build_plain_language_summary(impact: dict, custom_views: list) -> dict:
         )
         tone = 'success'
 
+    overall_category = (
+        DOC_DESTRUCTIVE if directly
+        else DOC_AT_RISK if potentially
+        else DOC_REGRESSION if label_only
+        else DOC_SAFE
+    )
+
     return {
         'headline': headline,
         'tone': tone,
+        'doc_category': overall_category,
+        'treatment': DOC_TREATMENT[overall_category],
+        'caveat': DOC_CAVEAT,
         'reasons': reasons,
         'view_counts': {
             'directly_impacted': directly,

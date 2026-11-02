@@ -19,9 +19,9 @@ from workbook_compare_engine import (
     _referenced_fields,
     build_plain_language_summary,
     classify_custom_view_impact,
-    classify_view_impact,
     compute_diff,
     parse_workbook,
+    view_doc_category,
 )
 
 
@@ -161,7 +161,8 @@ def test_hyper_extract_connection_mutation_is_ignored(base_root):
     assert not any(g.key == "conns" for g in diff.groups)
 
 
-def test_worksheet_rename_is_high_and_directly_impacted(base_root):
+def test_worksheet_rename_is_medium_and_at_risk(base_root):
+    """A similar-name rename is At-risk per the findings document, not Destructive."""
     published = _parse(base_root)
 
     candidate_root = copy.deepcopy(base_root)
@@ -176,12 +177,57 @@ def test_worksheet_rename_is_high_and_directly_impacted(base_root):
     assert ("add", "View: Sales Summary v2") in ops
 
     impact = classify_custom_view_impact(published, candidate, diff)
+    assert impact["risk_level"] == "Medium"
+    assert impact["classification"] == "potentially_impacted"
+    assert impact["doc_category"] == "At-risk"
+    assert any("possibly renamed to" in f["title"] for f in impact["findings"])
+    assert not any("removed or renamed" in f["title"] for f in impact["findings"])
+
+
+def test_worksheet_replaced_by_unrelated_name_is_destructive(base_root):
+    """A removal with no similar new name is still Destructive."""
+    published = _parse(base_root)
+
+    candidate_root = copy.deepcopy(base_root)
+    ws = candidate_root.find(".//worksheet[@name='Sales Summary']")
+    ws.set("name", "Quarterly Pipeline")
+    candidate = _parse(candidate_root)
+
+    impact = classify_custom_view_impact(published, candidate, compute_diff(published, candidate))
     assert impact["risk_level"] == "High"
-    assert impact["classification"] == "directly_impacted"
+    assert impact["doc_category"] == "Destructive"
     assert any(
         f["severity"] == "High" and "removed or renamed" in f["title"]
         for f in impact["findings"]
     )
+
+
+def test_calculation_logic_change_with_same_references_is_regression(base_root):
+    published = _parse(base_root)
+
+    candidate_root = copy.deepcopy(base_root)
+    calc = candidate_root.find(".//column[@name='[Calculation_1]']/calculation")
+    calc.set("formula", "AVG([Sales])")
+    candidate = _parse(candidate_root)
+
+    impact = classify_custom_view_impact(published, candidate, compute_diff(published, candidate))
+    calc_findings = [f for f in impact["findings"] if f["category"] == "Calculations"]
+    assert len(calc_findings) == 1
+    assert "formula changed" in calc_findings[0]["title"]
+    assert calc_findings[0]["doc_category"] == "Regression-test required"
+    assert impact["doc_category"] == "Regression-test required"
+
+
+def test_whitespace_only_calculation_edit_is_ignored(base_root):
+    published = _parse(base_root)
+
+    candidate_root = copy.deepcopy(base_root)
+    calc = candidate_root.find(".//column[@name='[Calculation_1]']/calculation")
+    calc.set("formula", "SUM([Sales])   ")
+    candidate = _parse(candidate_root)
+
+    impact = classify_custom_view_impact(published, candidate, compute_diff(published, candidate))
+    assert not any(f["category"] == "Calculations" for f in impact["findings"])
 
 
 def test_field_datatype_change_is_medium_and_potentially_impacted(base_root):
@@ -256,9 +302,8 @@ def test_live_connection_change_flags_conns_group(base_root):
     assert parts_by_attr["username"] == {"attr": "username", "before": "svc_user", "after": "svc_user2"}
 
 
-def test_classify_view_impact_scopes_rename_to_its_own_view(base_root):
-    """A rename of one view must not mark every other custom view as
-    directly_impacted - only the view that was actually removed/renamed."""
+def test_view_category_scopes_rename_to_its_own_view(base_root):
+    """A rename of one base view must not change the category of unrelated custom views."""
     published = _parse(base_root)
 
     candidate_root = copy.deepcopy(base_root)
@@ -266,15 +311,25 @@ def test_classify_view_impact_scopes_rename_to_its_own_view(base_root):
     ws.set("name", "Sales Summary v2")
     candidate = _parse(candidate_root)
 
-    diff = compute_diff(published, candidate)
-    impact = classify_custom_view_impact(published, candidate, diff)
-    assert impact["classification"] == "directly_impacted"
+    impact = classify_custom_view_impact(published, candidate, compute_diff(published, candidate))
 
-    renamed_view = classify_view_impact("Sales Summary", published, candidate, diff, impact["classification"])
-    assert renamed_view == "directly_impacted"
+    assert view_doc_category("Sales Summary", impact) == "At-risk"
+    assert view_doc_category("Overview", impact) == "Safe"
 
-    unrelated_view = classify_view_impact("Overview", published, candidate, diff, impact["classification"])
-    assert unrelated_view == "potentially_impacted"
+
+def test_parameter_rename_is_at_risk_not_removed(base_root):
+    published = _parse(base_root)
+
+    candidate_root = copy.deepcopy(base_root)
+    param = candidate_root.find(".//column[@name='[Parameter 1]']")
+    param.set("name", "[Parameter 2]")
+    candidate = _parse(candidate_root)
+
+    impact = classify_custom_view_impact(published, candidate, compute_diff(published, candidate))
+    titles = [f["title"] for f in impact["findings"] if f["category"] == "Parameters"]
+    assert any("possibly renamed to" in t for t in titles)
+    assert not any("removed" in t for t in titles)
+    assert impact["doc_category"] == "At-risk"
 
 
 def test_parameters_datasource_excluded_from_fields(base_root):
@@ -442,7 +497,10 @@ def test_calc_formula_edit_same_fields_no_referenced_field_finding(base_root):
     assert change_item.after == "SUM([Sales]) * 1.1"
 
     impact = classify_custom_view_impact(published, candidate, diff)
-    assert not any(f["category"] == "Calculations" for f in impact["findings"])
+    # Same references, changed logic: Regression-test required per the findings document.
+    calc_findings = [f for f in impact["findings"] if f["category"] == "Calculations"]
+    assert len(calc_findings) == 1
+    assert calc_findings[0]["doc_category"] == "Regression-test required"
 
 
 # --- (a) fixes: data already parsed/diffed but never surfaced to the classifier ---

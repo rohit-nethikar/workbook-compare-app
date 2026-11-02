@@ -27,8 +27,12 @@ from workbook_compare_engine import (
     ("Fields", 'Field "Sales" role changed', DOC_AT_RISK),
     ("Parameters", 'Parameter "Year" changed', DOC_AT_RISK),
     ("Data Sources", 'Data source "ds" connection changed', DOC_AT_RISK),
-    ("Filters", 'Filter card removed in "Overview"', DOC_AT_RISK),
-    ("Data Source Filters", 'Row-level security filter removed from "ds"', DOC_AT_RISK),
+    ("Filters", 'Filter card removed in "Overview"', DOC_DESTRUCTIVE),
+    ("Data Source Filters", 'Row-level security filter removed from "ds"', DOC_DESTRUCTIVE),
+    # At-risk: likely renames, and filters that point at renamed fields
+    ("Views", 'Base view "Sales" possibly renamed to "Sales v2"', DOC_AT_RISK),
+    ("Fields", 'Field "[Sales]" possibly renamed to "[Sales2]"', DOC_AT_RISK),
+    ("Filters", 'Filter on renamed field(s) in "Overview"', DOC_AT_RISK),
     # Regression-test required: output may change
     ("Calculations", 'Calculation "Margin" now references different fields', DOC_REGRESSION),
     ("Filters", 'Filter condition changed in "Overview"', DOC_REGRESSION),

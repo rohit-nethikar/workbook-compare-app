@@ -59,7 +59,8 @@
 <div class="card mb-4 border-start border-4 {{ ps_border }}" style="background-color: var(--bg-secondary); border-top: 1px solid var(--border-light); border-right: 1px solid var(--border-light); border-bottom: 1px solid var(--border-light);">
   <div class="card-body">
     <h5 style="color: var(--text-primary);">📋 Plain-Language Summary</h5>
-    <p class="mb-3" style="font-size: 1.05rem; color: var(--text-primary);"><strong>{{ ps.headline }}</strong></p>
+    <p class="mb-2" style="font-size: 1.05rem; color: var(--text-primary);"><strong>{{ ps.headline }}</strong></p>
+    <p class="mb-3 small" style="color: var(--text-primary);"><strong>Recommended action:</strong> {{ ps.treatment }}</p>
 
     {% if ps.total_views %}
     <div class="d-flex flex-wrap gap-2 mb-3">
@@ -80,6 +81,7 @@
     {% else %}
     <p class="text-muted mb-0">Nothing about this candidate file is different from what's currently published, so there's nothing that could change how a saved custom view looks or behaves.</p>
     {% endif %}
+    <p class="text-muted small mt-3 mb-0">{{ ps.caveat }}</p>
   </div>
 </div>
 
