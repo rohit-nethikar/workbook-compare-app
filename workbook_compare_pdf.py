@@ -36,6 +36,9 @@ _ROW_TINTS = {
     "Low": colors.HexColor("#e2e3e5"),
 }
 
+# Row tint for each document category, via the severity tint it corresponds to.
+_DOC_TINT_KEYS = {"Destructive": "High", "At-risk": "Medium", "Regression-test required": "Low"}
+
 _OP_LABELS = {"add": "+ Added", "remove": "- Removed", "change": "~ Changed"}
 
 _HEADER_STYLE = TableStyle(
@@ -57,8 +60,21 @@ def _text(value) -> str:
     return escape(str(value))
 
 
+# ReportLab cannot split a table row across pages. A single long value (for example a
+# group with hundreds of members) made one row taller than a page and failed the whole
+# export with LayoutError, so every table cell is capped at this many characters.
+MAX_CELL_CHARS = 500
+
+
+def _clip(value) -> str:
+    text = "" if value is None else str(value)
+    if len(text) <= MAX_CELL_CHARS:
+        return text
+    return text[:MAX_CELL_CHARS].rstrip() + " ... (truncated; see the Workbook Compare page for the full value)"
+
+
 def _cell(value, style) -> Paragraph:
-    return Paragraph(_text(value), style)
+    return Paragraph(_text(_clip(value)), style)
 
 
 def _styles():
@@ -158,7 +174,7 @@ def _findings_section(findings: list, styles) -> list:
         story.append(Spacer(1, 0.25 * inch))
         return story
 
-    rows = [["Severity", "Category", "Finding", "Detail"]]
+    rows = [["Risk", "Area", "Finding", "Detail"]]
     for f in findings:
         sheets = f.get("sheets") or []
         detail = f.get("detail") or ""
@@ -166,17 +182,18 @@ def _findings_section(findings: list, styles) -> list:
             detail = f"{detail} (Sheets: {', '.join(str(s) for s in sheets)})"
         rows.append(
             [
-                f.get("severity", ""),
+                _cell(f.get("doc_category") or f.get("severity", ""), styles["SmallBody"]),
                 _cell(f.get("category", ""), styles["SmallBody"]),
                 _cell(f.get("title", ""), styles["SmallBody"]),
                 _cell(detail, styles["SmallBody"]),
             ]
         )
 
-    table = Table(rows, colWidths=[0.7 * inch, 0.9 * inch, 2.0 * inch, 3.2 * inch], repeatRows=1)
+    table = Table(rows, colWidths=[1.1 * inch, 0.9 * inch, 1.9 * inch, 2.9 * inch], repeatRows=1)
     style_cmds = list(_HEADER_STYLE.getCommands())
     for i, f in enumerate(findings, start=1):
-        tint = _ROW_TINTS.get(f.get("severity"))
+        tint_key = _DOC_TINT_KEYS.get(f.get("doc_category"), f.get("severity"))
+        tint = _ROW_TINTS.get(tint_key)
         if tint:
             style_cmds.append(("BACKGROUND", (0, i), (-1, i), tint))
     table.setStyle(TableStyle(style_cmds))
@@ -267,8 +284,8 @@ def _custom_views_section(custom_views: list, styles) -> list:
     story.append(
         Paragraph(
             "Rows highlighted in red/amber/grey reference views whose structure changed "
-            "(High/Medium/Low impact respectively) &mdash; their owners should be notified "
-            "before this workbook is published.",
+            "(Destructive / At-risk / Regression-test required respectively) &mdash; their owners "
+            "should be notified before this workbook is published.",
             styles["SmallBody"],
         )
     )
