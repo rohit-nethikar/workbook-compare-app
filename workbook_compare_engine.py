@@ -893,6 +893,77 @@ def compute_diff(published: WorkbookStructure, candidate: WorkbookStructure) -> 
     return diff
 
 
+# Deployment risk categories from "Tableau Custom View Impact Findings" (Section 1).
+# Every finding is tagged with one of these; a view or workbook takes the worst one.
+DOC_SAFE = 'Safe'
+DOC_REGRESSION = 'Regression-test required'
+DOC_AT_RISK = 'At-risk'
+DOC_DESTRUCTIVE = 'Destructive'
+
+DOC_RANK = {DOC_SAFE: 0, DOC_REGRESSION: 1, DOC_AT_RISK: 2, DOC_DESTRUCTIVE: 3}
+
+# The category's display severity (High/Medium/Low/None). Drives the existing badge
+# colours and the view-count buckets, which are keyed on severity.
+DOC_SEVERITY = {
+    DOC_DESTRUCTIVE: 'High',
+    DOC_AT_RISK: 'Medium',
+    DOC_REGRESSION: 'Low',
+    DOC_SAFE: 'None',
+}
+
+# (finding category, title substring, doc category). First match wins; an empty
+# substring matches any title in that category. Rows follow Section 2 of the findings
+# document. Anything unmatched falls back to At-risk so it gets reviewed, not ignored.
+_DOC_CATEGORY_RULES = [
+    ('Views', 'New view', DOC_SAFE),
+    ('Views', 'removed or renamed', DOC_DESTRUCTIVE),
+    ('Fields', 'removed', DOC_DESTRUCTIVE),
+    ('Fields', 'datatype changed', DOC_AT_RISK),
+    ('Fields', 'role changed', DOC_AT_RISK),
+    ('Fields', 'caption changed', DOC_SAFE),
+    ('Fields', 'default aggregation', DOC_REGRESSION),
+    ('Data Sources', '', DOC_AT_RISK),
+    ('Data Source Filters', 'removed', DOC_AT_RISK),
+    ('Data Source Filters', '', DOC_REGRESSION),
+    ('Parameters', 'removed', DOC_DESTRUCTIVE),
+    ('Parameters', 'New parameter', DOC_SAFE),
+    ('Parameters', 'caption', DOC_SAFE),
+    ('Parameters', '', DOC_AT_RISK),
+    ('Filters', 'on removed field', DOC_DESTRUCTIVE),
+    ('Filters', 'card removed', DOC_AT_RISK),
+    ('Filters', 'condition changed', DOC_REGRESSION),
+    ('Filters', 'New filter', DOC_REGRESSION),
+    ('Filters', 'shown', DOC_SAFE),
+    ('Filters', 'hidden', DOC_REGRESSION),
+    ('Marks', '', DOC_REGRESSION),
+    ('Sorts', '', DOC_REGRESSION),
+    ('Encodings', '', DOC_REGRESSION),
+    ('Calculations', '', DOC_REGRESSION),
+    ('Groups & Sets', 'New', DOC_SAFE),
+    ('Groups & Sets', 'removed', DOC_DESTRUCTIVE),
+    ('Groups & Sets', '', DOC_REGRESSION),
+    ('Actions', 'New', DOC_SAFE),
+    ('Actions', '', DOC_REGRESSION),
+    ('Sheet Visibility', 'now visible', DOC_SAFE),
+    ('Sheet Visibility', '', DOC_AT_RISK),
+]
+
+
+def doc_category_for_finding(finding: dict) -> str:
+    """Map one finding to its document risk category using _DOC_CATEGORY_RULES."""
+    category = finding.get('category')
+    title = finding.get('title') or ''
+    for rule_category, title_part, doc_category in _DOC_CATEGORY_RULES:
+        if rule_category == category and title_part in title:
+            return doc_category
+    return DOC_AT_RISK
+
+
+def worst_doc_category(categories) -> str:
+    """Highest-ranked category in an iterable, or Safe if there are none."""
+    return max(categories, key=lambda c: DOC_RANK[c], default=DOC_SAFE)
+
+
 def classify_custom_view_impact(published: WorkbookStructure, candidate: WorkbookStructure, diff: WorkbookDiff) -> dict:
     """Classify impact level for custom view notifications.
 
@@ -1399,10 +1470,14 @@ def classify_custom_view_impact(published: WorkbookStructure, candidate: Workboo
     elif findings:
         classification = 'potentially_impacted'
 
+    for f in findings:
+        f['doc_category'] = doc_category_for_finding(f)
+
     return {
         'risk_level': risk_level,
         'findings': findings,
-        'classification': classification
+        'classification': classification,
+        'doc_category': worst_doc_category(f['doc_category'] for f in findings),
     }
 
 
@@ -1425,6 +1500,16 @@ def classify_view_impact(view_name: str, published: WorkbookStructure, candidate
         return 'potentially_impacted' if diff.total > 0 else 'no_change'
 
     return workbook_classification
+
+
+def view_doc_category(view_name: str, impact: dict) -> str:
+    """Document risk category for one custom view: the worst category among findings
+    that name this view's base sheet, plus workbook-wide findings (no sheet listed),
+    which can affect any view. Safe when nothing applies."""
+    return worst_doc_category(
+        f['doc_category'] for f in impact.get('findings', [])
+        if not f.get('sheets') or view_name in f['sheets']
+    )
 
 
 def apply_derived_state_evidence(delta) -> dict:
@@ -1484,6 +1569,8 @@ def apply_derived_state_evidence(delta) -> dict:
 # doesn't know what a "data source filter" or a "Set" is but still needs to
 # know whether a change is safe to publish. Keyed on the exact 'category'
 # strings produced by classify_custom_view_impact() above.
+_SEVERITY_WEIGHT = {'High': 2, 'Medium': 1, 'Low': 0}
+
 _CATEGORY_PLAIN_LANGUAGE = {
     'Views': 'A sheet or dashboard was renamed or removed - any custom view built on it may stop working entirely.',
     'Fields': 'A field the workbook depends on was removed, renamed, or had its type changed - filters, sorts, or calculations built on it may break silently.',
@@ -1500,8 +1587,6 @@ _CATEGORY_PLAIN_LANGUAGE = {
     'Sheet Visibility': 'A worksheet tab was hidden - a dashboard or custom view expecting to show that tab may now be missing it.',
 }
 
-_SEVERITY_RANK = {'High': 0, 'Medium': 1, 'Low': 2}
-
 
 def build_plain_language_summary(impact: dict, custom_views: list) -> dict:
     """Translates classify_custom_view_impact()'s findings, plus the per-view
@@ -1516,25 +1601,32 @@ def build_plain_language_summary(impact: dict, custom_views: list) -> dict:
     """
     findings = impact.get('findings') or []
 
+    def _doc(f):
+        return f.get('doc_category') or doc_category_for_finding(f)
+
+    def _weight(f):
+        # Most severe document category first; severity breaks ties within a category.
+        return DOC_RANK[_doc(f)], _SEVERITY_WEIGHT.get(f.get('severity'), 0)
+
     best_by_category = {}
     for f in findings:
         cat = f.get('category')
         if cat is None:
             continue
-        sev = f.get('severity', 'Low')
         current = best_by_category.get(cat)
-        if current is None or _SEVERITY_RANK.get(sev, 2) < _SEVERITY_RANK.get(current['severity'], 2):
+        if current is None or _weight(f) > _weight(current):
             best_by_category[cat] = f
 
     reasons = [
         {
             'category': cat,
             'severity': f.get('severity', 'Low'),
+            'doc_category': _doc(f),
             'text': _CATEGORY_PLAIN_LANGUAGE.get(cat, f.get('detail') or f.get('title') or cat),
         }
         for cat, f in best_by_category.items()
     ]
-    reasons.sort(key=lambda r: _SEVERITY_RANK.get(r['severity'], 2))
+    reasons.sort(key=lambda r: (DOC_RANK[r['doc_category']], _SEVERITY_WEIGHT.get(r['severity'], 0)), reverse=True)
 
     total_views = len(custom_views or [])
     severity_counts = {'High': 0, 'Medium': 0, 'Low': 0, 'None': 0}
@@ -1551,22 +1643,28 @@ def build_plain_language_summary(impact: dict, custom_views: list) -> dict:
         headline = 'This workbook has no existing custom views on record, so there is nothing this change could affect.'
         tone = 'info'
     elif directly:
-        headline = f'Yes - {directly} of {total_views} existing custom view(s) will likely be affected by this change.'
+        headline = (
+            f'{DOC_DESTRUCTIVE} - {directly} of {total_views} existing custom view(s) depend on something this '
+            'change removes or replaces. Plan recreation and notify their owners.'
+        )
         tone = 'danger'
     elif potentially:
         headline = (
-            f"Possibly - {potentially} of {total_views} existing custom view(s) touch something that changed, "
-            "though it isn't certain every one of them is affected."
+            f'{DOC_AT_RISK} - {potentially} of {total_views} existing custom view(s) may reset, map differently, '
+            'or behave unexpectedly. Identify and test these views before deploying.'
         )
         tone = 'warning'
     elif label_only:
         headline = (
-            f'Only a cosmetic change - {label_only} of {total_views} existing custom view(s) may show a '
-            'different label, but should otherwise keep working.'
+            f'{DOC_REGRESSION} - {label_only} of {total_views} existing custom view(s) should still load, but their '
+            'results may change. Run targeted regression tests.'
         )
         tone = 'info'
     else:
-        headline = f'No - none of the {total_views} existing custom view(s) are expected to be affected by this change.'
+        headline = (
+            f'{DOC_SAFE} - none of the {total_views} existing custom view(s) are expected to be affected. '
+            'A normal deployment with a basic smoke test is sufficient.'
+        )
         tone = 'success'
 
     return {

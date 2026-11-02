@@ -61,26 +61,15 @@ def test_read_twbx_corrupt_zip_raises():
         wc_routes._read_twb_bytes(stream, "candidate.twbx")
 
 
-@pytest.mark.parametrize("classification,expected", [
-    ("directly_impacted", "High"),
-    ("potentially_impacted", "Medium"),
-    ("label_change_only", "Low"),
-    ("no_change", "None"),
-    ("something_unknown", "None"),
+@pytest.mark.parametrize("doc_category,expected_severity", [
+    ("Destructive", "High"),
+    ("At-risk", "Medium"),
+    ("Regression-test required", "Low"),
+    ("Safe", "None"),
 ])
-def test_severity_for_classification(classification, expected):
-    assert wc_routes._severity_for_classification(classification) == expected
-
-
-@pytest.mark.parametrize("classification,expected", [
-    ("directly_impacted", "Directly impacted"),
-    ("potentially_impacted", "Potentially impacted"),
-    ("label_change_only", "Label change only"),
-    ("no_change", "No change detected"),
-    ("something_unknown", "No change detected"),
-])
-def test_label_for_classification(classification, expected):
-    assert wc_routes._label_for_classification(classification) == expected
+def test_doc_severity_maps_each_category(doc_category, expected_severity):
+    from workbook_compare_engine import DOC_SEVERITY
+    assert DOC_SEVERITY[doc_category] == expected_severity
 
 
 def test_unauthenticated_workbook_compare_redirects_to_login(monkeypatch):

@@ -31,11 +31,12 @@ import workbook_compare_pdf
 from auth import login_required
 from config import settings
 from workbook_compare_engine import (
+    DOC_SEVERITY,
     build_plain_language_summary,
     classify_custom_view_impact,
-    classify_view_impact,
     compute_diff,
     parse_workbook,
+    view_doc_category,
 )
 
 bp = Blueprint("workbook_compare", __name__)
@@ -76,24 +77,6 @@ def _read_twb_bytes(file_obj, filename: str) -> bytes:
         if info.file_size > MAX_TWB_BYTES:
             raise ValueError("The .twb inside the .twbx exceeds the accepted size limit.")
         return zf.read(twb_names[0])
-
-
-def _severity_for_classification(classification: str) -> str:
-    return {
-        "directly_impacted": "High",
-        "potentially_impacted": "Medium",
-        "label_change_only": "Low",
-        "no_change": "None",
-    }.get(classification, "None")
-
-
-def _label_for_classification(classification: str) -> str:
-    return {
-        "directly_impacted": "Directly impacted",
-        "potentially_impacted": "Potentially impacted",
-        "label_change_only": "Label change only",
-        "no_change": "No change detected",
-    }.get(classification, "No change detected")
 
 
 def _sorted_workbook_dicts(wb_items) -> list:
@@ -197,7 +180,7 @@ def run_workbook_compare():
     custom_views = []
     for row in matched:
         _id, name, _workbook_name, view_name, owner_name, shared, created_at, updated_at, last_accessed_at = row
-        view_classification = classify_view_impact(view_name, published, candidate, diff, impact["classification"])
+        view_category = view_doc_category(view_name, impact)
         custom_views.append({
             "id": _id,
             "name": name,
@@ -212,8 +195,8 @@ def run_workbook_compare():
             "created_at": created_at,
             "updated_at": updated_at,
             "last_accessed_at": last_accessed_at,
-            "impact_status": _label_for_classification(view_classification),
-            "impact_severity": _severity_for_classification(view_classification),
+            "impact_status": view_category,
+            "impact_severity": DOC_SEVERITY[view_category],
         })
 
     plain_summary = build_plain_language_summary(impact, custom_views)

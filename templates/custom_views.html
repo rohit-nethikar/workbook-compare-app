@@ -29,6 +29,14 @@
   shared) - if you expected data, try a different site using the site selector in the top-right of the nav bar.
 </div>
 {% else %}
+<div class="d-flex align-items-center gap-2 mb-2">
+  <label for="email-domain-filter" class="small text-muted mb-0">Owner domain:</label>
+  <select id="email-domain-filter" class="form-select form-select-sm" style="width: auto;">
+    <option value="all">All owners</option>
+    <option value="mayo">Mayo.edu only</option>
+    <option value="non-mayo">Non-Mayo.edu only</option>
+  </select>
+</div>
 <table id="custom-views-table" class="table table-striped table-bordered w-100">
   <thead>
     <tr>
@@ -80,6 +88,9 @@
         scrollX: true,
         orderCellsTop: true
       });
+
+      // Owner Email is column 4 (0-based).
+      addEmailDomainFilter('#custom-views-table', '#email-domain-filter', 4);
 
       // Populate each dropdown filter with the distinct values actually present
       // in this table, sourced from `data` (plain JS objects) rather than the

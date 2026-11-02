@@ -36,12 +36,12 @@
 </div>
 
 {% if result %}
-{% set risk = result.impact.risk_level %}
-{% set risk_class = {'High': 'bg-danger', 'Medium': 'bg-warning text-dark', 'Low': 'bg-secondary', 'None': 'bg-success'}.get(risk, 'bg-secondary') %}
+{% set risk = result.impact.doc_category %}
+{% set risk_class = {'Destructive': 'bg-danger', 'At-risk': 'bg-warning text-dark', 'Regression-test required': 'bg-info text-dark', 'Safe': 'bg-success'}.get(risk, 'bg-secondary') %}
 
-<div class="alert d-flex align-items-center justify-content-between gap-2 {{ 'alert-danger' if risk == 'High' else ('alert-warning' if risk == 'Medium' else ('alert-secondary' if risk == 'Low' else 'alert-success')) }}">
+<div class="alert d-flex align-items-center justify-content-between gap-2 {{ 'alert-danger' if risk == 'Destructive' else ('alert-warning' if risk == 'At-risk' else ('alert-info' if risk == 'Regression-test required' else 'alert-success')) }}">
   <div class="d-flex align-items-center gap-2">
-    <span class="badge {{ risk_class }}">{{ risk }} risk</span>
+    <span class="badge {{ risk_class }}">{{ risk }}</span>
     <span>
       <strong>{{ result.diff.total }}</strong> structural change(s) detected between the uploaded candidate and the
       published "{{ result.workbook_name }}" &mdash; {{ result.custom_views | length }} existing custom view(s) reference this workbook.
@@ -63,10 +63,10 @@
 
     {% if ps.total_views %}
     <div class="d-flex flex-wrap gap-2 mb-3">
-      {% if ps.view_counts.directly_impacted %}<span class="badge bg-danger">{{ ps.view_counts.directly_impacted }} likely affected</span>{% endif %}
-      {% if ps.view_counts.potentially_impacted %}<span class="badge bg-warning text-dark">{{ ps.view_counts.potentially_impacted }} possibly affected</span>{% endif %}
-      {% if ps.view_counts.label_change_only %}<span class="badge bg-info text-dark">{{ ps.view_counts.label_change_only }} label change only</span>{% endif %}
-      {% if ps.view_counts.no_change %}<span class="badge bg-success">{{ ps.view_counts.no_change }} unaffected</span>{% endif %}
+      {% if ps.view_counts.directly_impacted %}<span class="badge bg-danger">{{ ps.view_counts.directly_impacted }} Destructive</span>{% endif %}
+      {% if ps.view_counts.potentially_impacted %}<span class="badge bg-warning text-dark">{{ ps.view_counts.potentially_impacted }} At-risk</span>{% endif %}
+      {% if ps.view_counts.label_change_only %}<span class="badge bg-info text-dark">{{ ps.view_counts.label_change_only }} Regression-test required</span>{% endif %}
+      {% if ps.view_counts.no_change %}<span class="badge bg-success">{{ ps.view_counts.no_change }} Safe</span>{% endif %}
     </div>
     {% endif %}
 
@@ -102,7 +102,7 @@
     <ul class="list-group list-group-flush">
       {% for f in result.impact.findings %}
       <li class="list-group-item d-flex gap-3" style="background-color: transparent;">
-        <span class="badge {{ 'bg-danger' if f.severity == 'High' else ('bg-warning text-dark' if f.severity == 'Medium' else 'bg-secondary') }}" style="min-width: 4.5rem;">{{ f.severity }}</span>
+        <span class="badge {{ 'bg-danger' if f.doc_category == 'Destructive' else ('bg-warning text-dark' if f.doc_category == 'At-risk' else ('bg-info text-dark' if f.doc_category == 'Regression-test required' else 'bg-success')) }}" style="min-width: 10rem;">{{ f.doc_category }}</span>
         <div>
           <div><strong>{{ f.title }}</strong> <span class="text-muted small">&mdash; {{ f.category }}</span></div>
           <div class="small text-muted">{{ f.detail }}</div>
@@ -188,6 +188,14 @@
   ℹ️ No custom views found for this workbook. A non-admin PAT only sees views it owns or that are marked shared.
 </div>
 {% else %}
+<div class="d-flex align-items-center gap-2 mb-2">
+  <label for="email-domain-filter" class="small text-muted mb-0">Owner domain:</label>
+  <select id="email-domain-filter" class="form-select form-select-sm" style="width: auto;">
+    <option value="all">All owners</option>
+    <option value="mayo">Mayo.edu only</option>
+    <option value="non-mayo">Non-Mayo.edu only</option>
+  </select>
+</div>
 <table id="custom-views-table" class="table table-striped table-bordered w-100">
   <thead>
     <tr>
@@ -233,6 +241,8 @@
         pageLength: 25,
         scrollX: true
       });
+      // Owner Email is column 3 (0-based) on this table.
+      addEmailDomainFilter('#custom-views-table', '#email-domain-filter', 3);
     }
 
     var exportBtn = document.getElementById('export-json-btn');

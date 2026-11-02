@@ -808,7 +808,7 @@ def test_plain_language_summary_directly_impacted():
     custom_views = [_cv("High"), _cv("None")]
     summary = build_plain_language_summary(impact, custom_views)
     assert summary["tone"] == "danger"
-    assert summary["headline"].startswith("Yes -")
+    assert summary["headline"].startswith("Destructive -")
     assert summary["view_counts"]["directly_impacted"] == 1
     assert summary["view_counts"]["no_change"] == 1
 
@@ -818,7 +818,7 @@ def test_plain_language_summary_potentially_impacted_when_no_high():
     custom_views = [_cv("Medium"), _cv("Medium")]
     summary = build_plain_language_summary(impact, custom_views)
     assert summary["tone"] == "warning"
-    assert summary["headline"].startswith("Possibly -")
+    assert summary["headline"].startswith("At-risk -")
     assert summary["view_counts"]["potentially_impacted"] == 2
 
 
@@ -827,14 +827,14 @@ def test_plain_language_summary_label_change_only():
     custom_views = [_cv("Low")]
     summary = build_plain_language_summary(impact, custom_views)
     assert summary["tone"] == "info"
-    assert summary["headline"].startswith("Only a cosmetic change")
+    assert summary["headline"].startswith("Regression-test required -")
     assert summary["view_counts"]["label_change_only"] == 1
 
 
 def test_plain_language_summary_no_change():
     summary = build_plain_language_summary({"findings": []}, [_cv("None"), _cv("None")])
     assert summary["tone"] == "success"
-    assert summary["headline"].startswith("No -")
+    assert summary["headline"].startswith("Safe -")
     assert summary["view_counts"]["no_change"] == 2
 
 

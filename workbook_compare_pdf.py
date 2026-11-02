@@ -24,10 +24,10 @@ from reportlab.platypus import (
 )
 
 _RISK_COLORS = {
-    "High": colors.HexColor("#dc3545"),
-    "Medium": colors.HexColor("#e8a100"),
-    "Low": colors.HexColor("#6c757d"),
-    "None": colors.HexColor("#198754"),
+    "Destructive": colors.HexColor("#dc3545"),
+    "At-risk": colors.HexColor("#e8a100"),
+    "Regression-test required": colors.HexColor("#0dcaf0"),
+    "Safe": colors.HexColor("#198754"),
 }
 
 _ROW_TINTS = {
@@ -315,7 +315,7 @@ def build_report_pdf(
     story.extend(_plain_summary_section(plain_summary or {}, styles))
     story.extend(
         _risk_banner(
-            impact.get("risk_level", "None"),
+            impact.get("doc_category", "Safe"),
             (diff or {}).get("total", 0),
             len(custom_views or []),
             styles,

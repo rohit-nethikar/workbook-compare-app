@@ -25,3 +25,32 @@ function initDataTable(selector, options) {
   var merged = $.extend(true, {}, defaults, options);
   return $(selector).DataTable(merged);
 }
+
+// Owner domain filter: narrows an owner-email column to Mayo.edu or non-Mayo.edu
+// addresses. Blank or unparseable emails count as non-Mayo.edu.
+var emailDomainFilters = {};
+
+function isMayoEmail(email) {
+  var at = email.lastIndexOf('@');
+  if (at < 0) { return false; }
+  return /(^|\.)mayo\.edu$/i.test(email.slice(at + 1).trim());
+}
+
+$.fn.dataTable.ext.search.push(function (settings, data) {
+  var f = emailDomainFilters[settings.nTable.id];
+  if (!f || f.value === 'all') { return true; }
+  var isMayo = isMayoEmail(String(data[f.column] || '').trim());
+  return f.value === 'mayo' ? isMayo : !isMayo;
+});
+
+// Wires a <select> (value: all | mayo | non-mayo) to filter the given table's
+// email column. Call after initDataTable.
+function addEmailDomainFilter(tableSelector, selectSelector, emailColumn) {
+  var tableId = $(tableSelector).attr('id');
+  var state = { column: emailColumn, value: 'all' };
+  emailDomainFilters[tableId] = state;
+  $(selectSelector).on('change', function () {
+    state.value = this.value;
+    $(tableSelector).DataTable().draw();
+  });
+}

@@ -29,6 +29,31 @@ body {
   color: var(--text-primary);
 }
 
+/* DataTables Buttons (CSV, Columns) ship their own gray fill, which hides the label
+   text. Pin them to the app's theme variables so they read in light and dark mode. */
+.dt-buttons .btn,
+.dt-buttons button.dt-button,
+.dt-buttons a.dt-button {
+  background-color: var(--bg-secondary) !important;
+  color: var(--text-primary) !important;
+  border: 1px solid var(--border-light) !important;
+}
+.dt-buttons .btn:hover,
+.dt-buttons button.dt-button:hover,
+.dt-buttons a.dt-button:hover,
+.dt-buttons .btn:focus,
+.dt-buttons button.dt-button:focus {
+  background-color: var(--border-light) !important;
+  color: var(--text-primary) !important;
+}
+
+/* Owner domain filter dropdown: keep the native select readable in dark mode. */
+.form-select {
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+  border-color: var(--border-light);
+}
+
 .badge {
   display: inline-flex;
   align-items: center;
