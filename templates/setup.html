@@ -13,18 +13,20 @@
       <strong>Server:</strong> {{ server_url }}<br>
       <strong>Sites:</strong> {{ sites|join(", ") }}<br>
       The Personal Access Token below must have access to every site listed above.
-      Edit that file and restart the app if these are wrong.
+      Edit that file and restart the app if these are wrong.<br><br>
+      <strong>Need help?</strong> See <a href="https://github.com/your-org/workbook-compare-app/blob/main/PAT_CONNECTION_GUIDE.md" target="_blank">PAT Connection Guide</a> for step-by-step instructions.
     </div>
 
     <form method="post">
       <div class="mb-3">
         <label class="form-label">Personal Access Token Name</label>
-        <input type="text" name="pat_name" class="form-control" required>
+        <input type="text" name="pat_name" class="form-control" placeholder="e.g., workbook-compare-app" required>
+        <div class="form-text">The name you assigned when creating the PAT in Tableau Server (not the secret).</div>
       </div>
       <div class="mb-3">
         <label class="form-label">Personal Access Token Secret</label>
         <input type="password" name="pat_secret" class="form-control" required>
-        <div class="form-text">Generate this in Tableau Server under your account settings &rarr; Personal Access Tokens. It's encrypted at rest and never displayed again.</div>
+        <div class="form-text">Generate this in Tableau Server: Account Settings → Personal Access Tokens → New Token. Copy the secret (shown once). It's encrypted at rest and never displayed again.</div>
       </div>
       <div class="mb-3">
         <label class="form-label">Dashboard Passcode</label>
